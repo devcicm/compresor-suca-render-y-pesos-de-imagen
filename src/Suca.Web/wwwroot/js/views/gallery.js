@@ -639,7 +639,8 @@ async function openDetail(id) {
   const integrity = el("detail-integrity-chips");
   if (integrity) {
     const peso = record.pesoObjetivoKb !== null && record.pesoObjetivoKb !== undefined
-      ? `<span class="chip" data-kind="${record.pesoObjetivoCumplido ? "ok" : "bad"}">objetivo ${Number(record.pesoObjetivoKb).toFixed(0)} KB ${record.pesoObjetivoCumplido ? "cumplido" : "no cumplido"} (${record.pesoIteraciones ?? 0} iter.)</span>`
+      ? `<span class="chip" data-kind="${record.pesoObjetivoCumplido ? "ok" : "bad"}">objetivo ${Number(record.pesoObjetivoKb).toFixed(0)} KB ${record.pesoObjetivoCumplido ? "cumplido" : "no cumplido"} (${record.pesoIteraciones ?? 0} iter.)</span>
+         ${record.optimized ? `<span class="chip" data-kind="accent">optimizado: ${record.candidatesEvaluated} candidatos · escala ${Number(record.optimizedScale).toFixed(2)} · q${record.optimizedQuality} · score ${Number(record.qualityScore ?? 0).toFixed(3)}</span>` : ""}`
       : "";
 
     if (record.integritySsim === null || record.integritySsim === undefined) {

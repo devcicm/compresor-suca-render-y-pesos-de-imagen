@@ -525,12 +525,15 @@ namespace SUCA_Compressor
                     return Results.BadRequest(new { error = "pesoMoscaKbTarget debe estar entre 1 y 20000 KB.", errorCode = ConversionErrorCodes.InvalidFormat });
 
                 bool? allowLossy = FormBoolNullable(form, "allowLossy");
+                bool optimize = FormBool(form, "optimize", false);
                 command.Options = new SucaOptions
                 {
                     // El techo de peso es opt-in: si el cliente no lo pide, no se recorta.
                     EnablePesoMosca = targetKb.HasValue,
                     PesoMoscaKbTarget = targetKb ?? 100.0,
-                    AllowLossy = allowLossy ?? true
+                    AllowLossy = allowLossy ?? true,
+                    // Optimizacion: busca la mejor escala x calidad que quepa en el techo.
+                    OptimizeForTarget = optimize && targetKb.HasValue
                 };
 
                 int timeoutSeconds = Math.Max(5, effective.Web.ConvertTimeoutSeconds ?? 180);
@@ -1374,6 +1377,13 @@ namespace SUCA_Compressor
             {
                 command.Options ??= new SucaOptions { EnablePesoMosca = false };
                 command.Options.AllowLossy = lossyElement.GetBoolean();
+            }
+
+            if (payload.TryGetProperty("optimize", out JsonElement optimizeElement)
+                && optimizeElement.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                command.Options ??= new SucaOptions { EnablePesoMosca = false };
+                command.Options.OptimizeForTarget = optimizeElement.GetBoolean();
             }
             // Apply user defaults for any value the payload omitted.
             if (!payload.TryGetProperty("engine", out _))

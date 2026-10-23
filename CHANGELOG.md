@@ -9,6 +9,19 @@ Todavia no hay release publicada: este es el estado actual del codigo de `main`.
 
 ### Anadido
 
+**Motor SUCA: optimizacion de la conversion bajo un techo de peso**
+- **Modo optimizado** (`optimize=true` en REST/MCP y casilla "Buscar la mejor calidad que
+  quepa" en la UI): explora varias **escalas** y, para cada una, la **maxima calidad que
+  cabe**; elige la combinacion con mejor puntuacion, priorizando retencion de bordes en
+  documento/UI/huella/grafico y SSIM en fotos. Reporta `optimized`, `optimizedScale`,
+  `optimizedQuality`, `candidatesEvaluated` y `qualityScore`.
+- **Legibilidad verificada** (`legibilityAcceptable`): SSIM >= 0.90 y, en contenido
+  textual, bordes >= 0.70. Si el techo se cumple pero la legibilidad no, la UI lo marca en
+  rojo.
+- Medicion: con el mismo techo de 80 KB, la foto de prueba pasa de 1016x1524 (simple) a
+  **1440x2160** (optimizada): +41% de pixeles a igual peso. En un documento de 60 KB pasa de
+  1152x1584 a **1360x1870 con q92**.
+
 **Motor SUCA documentado y configurable**
 - Nuevo `docs/math/suca-formulas.md`: las formulas completas del kernel (senales visuales,
   matriz de factorizacion A-D, hash SUCA, calidad base, peso mosca, bpp/ratio, integridad

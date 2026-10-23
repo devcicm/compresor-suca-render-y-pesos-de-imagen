@@ -68,6 +68,12 @@
           <label class="toggle"><input id="allow-lossy" type="checkbox" checked><span>Permitir compresion con perdida</span></label>
         </label>
         <label class="field">
+          <span class="field-label">Optimizar para el techo
+            <span class="tip-dot" data-tip-title="Optimizar" data-tip="Con peso objetivo, explora varias escalas y para cada una la maxima calidad que cabe; elige la combinacion con mejor puntuacion de calidad y legibilidad (prioriza bordes en documentos, UI y huellas; SSIM en fotos). Requiere peso objetivo. Cuesta mas tiempo: varias codificaciones por imagen." tabindex="0" role="note">?</span>
+          </span>
+          <label class="toggle"><input id="optimize-target" type="checkbox"><span>Buscar la mejor calidad que quepa</span></label>
+        </label>
+        <label class="field">
           <span class="field-label">Motor
             <span class="tip-dot" data-tip-title="Motor" data-tip="SUCA: pipeline completo con perfil A-D, peso mosca y reporte de integridad (primera opcion). Directo: re-encodado con ImageSharp, mas rapido y predecible." tabindex="0" role="note">?</span>
           </span>

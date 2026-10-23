@@ -197,6 +197,17 @@ namespace SUCA_Compressor
         public int MinWidth { get; set; } = 192;
         public int MinHeight { get; set; } = 192;
         public bool GenerateIntegrityReport { get; set; } = true;
+
+        // Optimizacion para techo de peso: en vez de un solo perfil, explora varias
+        // escalas y, para cada una, la mejor calidad que quepa; elige la combinacion
+        // con mejor puntuacion de calidad/legibilidad. Requiere PesoMoscaKbTarget.
+        public bool OptimizeForTarget { get; set; }
+        public int OptimizeCandidates { get; set; } = 3;
+
+        // Umbral de legibilidad: por debajo de esto el resultado se marca como riesgoso
+        // aunque cumpla el peso (texto/huella pueden volverse ilegibles).
+        public double MinLegibilitySsim { get; set; } = 0.90;
+        public double MinLegibilityEdgeRetention { get; set; } = 0.70;
     }
 
     public sealed class ImageAnalysis
@@ -272,6 +283,14 @@ namespace SUCA_Compressor
         public double? PesoObjetivoKb { get; set; }
         public bool? PesoObjetivoCumplido { get; set; }
         public int PesoIteraciones { get; set; }
+
+        // Optimizacion (busqueda de la mejor combinacion escala x calidad bajo el techo).
+        public bool Optimized { get; set; }
+        public double? OptimizedScale { get; set; }
+        public int? OptimizedQuality { get; set; }
+        public int CandidatesEvaluated { get; set; }
+        public double? QualityScore { get; set; }
+        public bool? LegibilityAcceptable { get; set; }
     }
 
     public sealed class IntegrityReport
@@ -1575,7 +1594,42 @@ namespace SUCA_Compressor
 
             // Guardado inicial + refinamiento peso mosca
             var swSave = Stopwatch.StartNew();
-            (bool pesoCumplido, int pesoIteraciones) = SaveWithOptionalPesoMosca(image, outputPath, decision, options, cancellationToken);
+            bool pesoCumplido;
+            int pesoIteraciones;
+
+            if (options.OptimizeForTarget && options.EnablePesoMosca && options.PesoMoscaKbTarget > 0
+                && decision.OutputFormat is SucaOutputFormat.Jpeg or SucaOutputFormat.Webp)
+            {
+                // Optimizacion: explora escala x calidad y se queda la mejor combinacion
+                // que cumpla el techo (prioriza legibilidad en texto/UI/huella).
+                (pesoCumplido, pesoIteraciones, double? optScale, int? optQuality, int candidatos, double? score, int optW, int optH) =
+                    OptimizeForPeso(inputPath, outputPath, decision, options, cancellationToken);
+
+                if (optScale.HasValue)
+                {
+                    result.Optimized = true;
+                    result.OptimizedScale = optScale;
+                    result.OptimizedQuality = optQuality;
+                    result.CandidatesEvaluated = candidatos;
+                    result.QualityScore = score.HasValue ? Math.Round(score.Value, 4) : null;
+
+                    decision.Scale = optScale.Value;
+                    decision.Quality = optQuality ?? decision.Quality;
+                    decision.NewWidth = optW;
+                    decision.NewHeight = optH;
+                }
+                else
+                {
+                    // Ningun candidato cupo: se usa el camino clasico sobre la imagen
+                    // ya escalada por el perfil (nunca se deja la salida sin escribir).
+                    (pesoCumplido, pesoIteraciones) = SaveWithOptionalPesoMosca(image, outputPath, decision, options, cancellationToken);
+                }
+            }
+            else
+            {
+                (pesoCumplido, pesoIteraciones) = SaveWithOptionalPesoMosca(image, outputPath, decision, options, cancellationToken);
+            }
+
             swSave.Stop();
 
             var finfo = new FileInfo(outputPath);
@@ -1599,6 +1653,19 @@ namespace SUCA_Compressor
 
             if (options.GenerateIntegrityReport)
                 result.Integrity = IntegrityValidator.Compare(inputPath, outputPath, cancellationToken);
+
+            // Legibilidad: en texto/UI/huella exige bordes y SSIM; en foto basta el SSIM
+            // (perder alta frecuencia es esperable y no afecta a "leer" la imagen).
+            if (result.Integrity is { } report)
+            {
+                bool legibilityKind = decision.ContentKind is ImageContentKind.Document
+                    or ImageContentKind.Ui
+                    or ImageContentKind.Graphic
+                    or ImageContentKind.Fingerprint;
+
+                result.LegibilityAcceptable = report.SsimLite >= options.MinLegibilitySsim
+                    && (!legibilityKind || report.EdgeRetention >= options.MinLegibilityEdgeRetention);
+            }
 
             totalSw.Stop();
             result.TotalMs = totalSw.ElapsedMilliseconds;
@@ -1742,6 +1809,136 @@ namespace SUCA_Compressor
         }
 
         private static double FileSizeKb(string path) => new FileInfo(path).Length / 1024.0;
+
+        /// <summary>
+        /// Busca la mejor combinacion (escala, calidad) que quepa en el techo de peso.
+        /// Para cada escala candidata calcula la maxima calidad que cabe y mide la
+        /// integridad; elige la de mejor puntuacion. En documentos/UI/huella prima la
+        /// retencion de bordes (legibilidad); en fotos prima el SSIM.
+        /// </summary>
+        private static (bool cumplido, int iteraciones, double? scale, int? quality, int candidatos, double? score, int width, int height)
+            OptimizeForPeso(
+                string inputPath,
+                string outputPath,
+                SucaDecision decision,
+                SucaOptions options,
+                CancellationToken cancellationToken)
+        {
+            double target = options.PesoMoscaKbTarget;
+            if (target <= 0)
+                return (true, 0, null, null, 0, null, 0, 0);
+
+            bool legibilityFirst = decision.ContentKind is ImageContentKind.Document
+                or ImageContentKind.Ui
+                or ImageContentKind.Fingerprint
+                or ImageContentKind.Graphic;
+
+            var ladder = new[] { 1.0, 0.85, 0.72, 0.60, 0.48, 0.38 };
+            int candidateLimit = Math.Clamp(options.OptimizeCandidates, 1, ladder.Length);
+            string probePath = outputPath + ".opt";
+            int iterations = 0;
+            int evaluated = 0;
+
+            double? bestScale = null;
+            int? bestQuality = null;
+            double bestScore = double.MinValue;
+            double bestKb = 0;
+            int bestWidth = 0;
+            int bestHeight = 0;
+
+            // Los candidatos salen del original, no de la imagen ya escalada por el perfil.
+            using var source = Image.Load<Rgba32>(inputPath);
+            source.Mutate(x => x.AutoOrient());
+            if (decision.RemoveMetadata)
+            {
+                source.Metadata.ExifProfile = null;
+                source.Metadata.IccProfile = null;
+                source.Metadata.IptcProfile = null;
+                source.Metadata.XmpProfile = null;
+            }
+
+            try
+            {
+                for (int index = 0; index < candidateLimit; index++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    double scale = ladder[index];
+                    int nw = (int)Math.Round(source.Width * scale);
+                    int nh = (int)Math.Round(source.Height * scale);
+                    if (nw > source.Width) nw = source.Width;
+                    if (nh > source.Height) nh = source.Height;
+                    if (nw < 64 || nh < 64) break;
+
+                    using var candidate = source.Clone(ctx => ctx.Resize(new ResizeOptions
+                    {
+                        Mode = ResizeMode.Max,
+                        Sampler = KnownResamplers.MitchellNetravali,
+                        Size = new Size(nw, nh)
+                    }));
+
+                    // Maxima calidad que cabe: de mayor a menor, primera que cumple.
+                    int chosenQuality = 0;
+                    foreach (int q in new[] { 92, 84, 76, 66, 55, 45, 35 })
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+
+                        SaveByDecision(candidate, probePath, new SucaDecision
+                        {
+                            Hash = decision.Hash,
+                            ExtendedHash = decision.ExtendedHash,
+                            Scale = scale,
+                            Quality = q,
+                            OutputFormat = decision.OutputFormat,
+                            UseNearLosslessWebp = decision.UseNearLosslessWebp,
+                            NearLosslessQuality = Math.Min(q, 80),
+                            RemoveMetadata = decision.RemoveMetadata,
+                            ContentKind = decision.ContentKind,
+                            NewWidth = candidate.Width,
+                            NewHeight = candidate.Height
+                        }, cancellationToken);
+
+                        iterations++;
+                        if (FileSizeKb(probePath) <= target * 0.98)
+                        {
+                            chosenQuality = q;
+                            break;
+                        }
+                    }
+
+                    if (chosenQuality == 0)
+                        continue;
+
+                    evaluated++;
+
+                    // Medir que tan fiel es esta combinacion respecto al original.
+                    IntegrityReport probe = IntegrityValidator.Compare(inputPath, probePath, cancellationToken);
+
+                    double score = legibilityFirst
+                        ? (0.65 * probe.EdgeRetention) + (0.35 * probe.SsimLite)
+                        : (0.70 * probe.SsimLite) + (0.30 * probe.EdgeRetention);
+
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        bestScale = scale;
+                        bestQuality = chosenQuality;
+                        bestKb = FileSizeKb(probePath);
+                        bestWidth = candidate.Width;
+                        bestHeight = candidate.Height;
+                        File.Copy(probePath, outputPath, overwrite: true);
+                    }
+                }
+            }
+            finally
+            {
+                TryDeleteFile(probePath);
+            }
+
+            bool met = bestScale.HasValue && bestKb <= target * 1.02;
+            return (met, iterations, bestScale, bestQuality, evaluated,
+                bestScale.HasValue ? bestScore : null, bestWidth, bestHeight);
+        }
 
         private static void TryDeleteFile(string path)
         {

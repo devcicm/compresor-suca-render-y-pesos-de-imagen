@@ -115,11 +115,18 @@ Toda coleccion referenciada (al crear, mover imagenes o convertir) se registra e
 
 ## Metricas por imagen
 
+- **Rendimiento y optimizacion**: el motor SUCA procesa en paralelo desde la cola. Con
+  `optimize=true` cada imagen se codifica varias veces (busqueda escala x calidad), asi que
+  el lote tarda mas; la UI lo indica en el tooltip. Para volumen alto, usar el modo simple
+  (solo `pesoMoscaKbTarget`) y reservar la optimizacion para imagenes criticas.
+
 Cada conversion registra y expone: formato y dimensiones de entrada y salida, bytes, megapixeles, presencia de EXIF, bits por pixel, ratio de compresion, porcentaje de ahorro, duracion (ms), motor, calidad, hash SUCA (modo suca), estado, `correlationId` e historial de estados.
 
 **Integridad perceptual (motor SUCA)**: el kernel genera un reporte que ahora viaja con el registro y se muestra en la UI: `integritySsim`, `integrityPsnr` (dB), `integrityEdgeRetention`, `integrityHistogram`, `integrityMode` (`perceptual` o `lossless-strong`), `integrityVerdict` y `integrityBitwiseEqual`. Criterio de aceptacion: `SSIM >= 0.88`, bordes `>= 0.80` y histograma `>= 0.84`. `integrityBitwiseEqual = true` solo cuando los SHA-256 coinciden (sin perdida real). El motor directo no emite reporte. Detalle matematico en [docs/math/suca-formulas.md](../math/suca-formulas.md).
 
 **Techo de peso (peso mosca)**: `pesoMoscaKbTarget` es **opt-in**; sin el, la escala la decide el perfil A-D. Cuando se pide, el kernel lo hace cumplir (baja calidad y reduce escala con paso geometrico; si sobra margen, sube calidad) y el registro informa `pesoObjetivoKb`, `pesoObjetivoCumplido` y `pesoIteraciones`. La UI muestra un chip verde "objetivo N KB cumplido" o rojo "no cumplido".
+
+**Optimizacion bajo el techo (`optimize=true`)**: explora varias escalas y, para cada una, la maxima calidad que cabe; elige la combinacion con mejor puntuacion (prioriza retencion de bordes en documento/UI/huella/grafico y SSIM en fotos). El registro anade `optimized`, `optimizedScale`, `optimizedQuality`, `candidatesEvaluated`, `qualityScore` y `legibilityAcceptable` (SSIM >= 0.90 y, en contenido textual, bordes >= 0.70). Es mas lento (varias codificaciones por imagen) y solo aplica al motor SUCA con techo de peso.
 
 ## Ajustes de sistema y usuario
 

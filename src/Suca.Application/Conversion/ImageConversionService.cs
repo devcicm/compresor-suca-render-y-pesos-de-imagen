@@ -87,6 +87,14 @@ namespace SUCA_Compressor.Application.Conversion
         public bool? PesoObjetivoCumplido { get; set; }
         public int PesoIteraciones { get; set; }
 
+        // Optimizacion por busqueda (escala x calidad) y su puntuacion de legibilidad.
+        public bool Optimized { get; set; }
+        public double? OptimizedScale { get; set; }
+        public int? OptimizedQuality { get; set; }
+        public int CandidatesEvaluated { get; set; }
+        public double? QualityScore { get; set; }
+        public bool? LegibilityAcceptable { get; set; }
+
         public string OriginalFile { get; set; } = "";
         public string ConvertedFile { get; set; } = "";
         public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
@@ -1164,6 +1172,12 @@ namespace SUCA_Compressor.Application.Conversion
             record.PesoObjetivoKb = result.PesoObjetivoKb;
             record.PesoObjetivoCumplido = result.PesoObjetivoCumplido;
             record.PesoIteraciones = result.PesoIteraciones;
+            record.Optimized = result.Optimized;
+            record.OptimizedScale = result.OptimizedScale;
+            record.OptimizedQuality = result.OptimizedQuality;
+            record.CandidatesEvaluated = result.CandidatesEvaluated;
+            record.QualityScore = result.QualityScore;
+            record.LegibilityAcceptable = result.LegibilityAcceptable;
 
             FillOutputMetrics(record, convertedBytes, record.ConvertedWidth, record.ConvertedHeight, format);
 

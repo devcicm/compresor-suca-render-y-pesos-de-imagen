@@ -133,40 +133,73 @@ calidad = clamp(qBase + delta, 35, 99)
 `SucaFormatConverter.Convert` (motor "directo") hace lo mismo sin perfil: resize
 Mitchell-Netravali y encode directo.
 
-## 7. Peso mosca
+## 7. Peso mosca y optimizacion bajo el techo
 
 `SucaCompressor.SaveWithOptionalPesoMosca` hace cumplir un **techo de peso** (opt-in:
 solo si el cliente envia `pesoMoscaKbTarget`; sin techo manda la escala del perfil).
+
+### Modo simple (una pasada)
 
 ```
 1) Guardado inicial con la decision del perfil.
 2) Si la salida ya cabe y el formato es con perdida:
       subir calidad de 5 en 5 (tope 95) mientras siga por debajo del 95% del techo.
-      => "mejor calidad posible dentro del techo", sin desperdiciar el margen.
 3) Si no cabe:
       bajar calidad de 10 en 10 hasta el piso (35, near-lossless 45);
-      luego reducir escala de forma GEOMETRICA:
+      luego reducir escala GEOMETRICAMENTE:
           ratio = sqrt(objetivo / peso_actual) * 0.96    (acotado a 0.45..0.97)
       porque el peso crece aproximadamente con el area (raiz cuadrada).
-      Repetir hasta cumplir o agotar MaxRefineIterations.
-4) Se informa el resultado:
-      pesoObjetivoKb, pesoObjetivoCumplido, pesoIteraciones
+4) Se informa: pesoObjetivoKb, pesoObjetivoCumplido, pesoIteraciones.
 ```
 
-Antes el bucle daba pasos fijos de `×0.94` con 8 iteraciones (maximo `0.61` de reduccion)
-y **se rendia en silencio**: con un techo de 80 KB el archivo podia salir en 500 KB sin
-avisar. Ahora la convergencia es geometrica (1-3 pasos en la practica) y, si aun asi no
-se alcanza, el registro lo dice con `pesoObjetivoCumplido = false` y la UI lo muestra en
-rojo.
+### Modo optimizado (`optimize = true`): permutaciones escala x calidad
 
-Medicion con una foto real de 3.29 MB (5197x7791):
+Busca la **mejor combinacion posible** dentro del techo en vez de quedarse con la escala
+del perfil:
 
-| Techo pedido | Salida | Dimensiones | Cumplido | Iteraciones |
+```
+escalas candidatas: 1.00, 0.85, 0.72, 0.60, 0.48, 0.38   (las N primeras, N = OptimizeCandidates)
+para cada escala:
+    calidad: probar 92, 84, 76, 66, 55, 45, 35 y quedarse con la primera que cabe
+    si ninguna cabe -> descartar la escala
+    medir integridad del candidato (SSIM, bordes)
+    puntuacion (score):
+        documento / UI / huella / grafico -> 0.65 * bordes + 0.35 * SSIM   (legibilidad primero)
+        foto                              -> 0.70 * SSIM  + 0.30 * bordes
+elegir el candidato con mayor score
+```
+
+El resultado reporta `optimized`, `optimizedScale`, `optimizedQuality`,
+`candidatesEvaluated` y `qualityScore`. Si ningun candidato cabe, cae al modo simple.
+
+**Legibilidad**: al final se calcula `legibilityAcceptable`:
+
+```
+documento/UI/huella/grafico : SSIM >= 0.90  Y  bordes >= 0.70
+foto                        : SSIM >= 0.90
+```
+
+Si el techo se cumple pero la legibilidad no, la UI lo marca en rojo: cumplir el peso no
+justifica un texto ilegible.
+
+### Mediciones reales
+
+Foto sintetica 2000x3000 (17 MB), techo 80 KB:
+
+| Modo | Salida | Dimensiones | SSIM | Score |
 | --- | --- | --- | --- | --- |
-| sin techo (perfil) | 495.9 KB | 3742x5610 | — | — |
-| **80 KB** | **71.2 KB** | 1529x2291 | si | 5 |
-| 300 KB | 282 KB | 3145x4715 | si | 3 |
-| 1 KB | 0.98 KB | 116x173 | si | 12 |
+| simple | 47.6 KB | 1016x1524 | 0.9980 | — |
+| **optimizado** | 72.3 KB | **1440x2160** | 0.9961 | 0.3489 |
+
+Documento sintetico 1600x2200 (10 MB), techo 60 KB:
+
+| Modo | Salida | Dimensiones | Calidad | Bordes | Legible |
+| --- | --- | --- | --- | --- | --- |
+| simple | 13.4 KB | 1152x1584 | — | 1.05 | si |
+| **optimizado** | 19.1 KB | **1360x1870** | q92 | 1.07 | si |
+
+El modo optimizado gasta mas margen del techo a cambio de **mas resolucion y calidad**:
+en la foto, +41% de pixeles con el mismo limite de peso.
 
 ## 8. Metricas de salida
 
