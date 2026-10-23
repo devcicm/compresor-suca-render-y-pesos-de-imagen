@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -356,6 +357,8 @@ namespace SUCA_Compressor.Application.Conversion
         Task<ConversionFileContent?> OpenFileAsync(Guid id, string variant, CancellationToken cancellationToken = default);
         Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default);
         Task<Result> SetCollectionAsync(Guid id, string collection, CancellationToken cancellationToken = default);
+        Task<Result<int>> SetCollectionForManyAsync(IEnumerable<Guid> ids, string collection, CancellationToken cancellationToken = default);
+        Task<Result<ConversionFileContent>> ExportArchiveAsync(IEnumerable<Guid> ids, string variant, CancellationToken cancellationToken = default);
         Task<IReadOnlyList<CollectionSummary>> ListCollectionsAsync(CancellationToken cancellationToken = default);
         Task<Result<CollectionImagesResult>> GetCollectionAsync(string collection, CollectionImagesRequest request, CancellationToken cancellationToken = default);
         Task<Result<int>> DissolveCollectionAsync(string collection, CancellationToken cancellationToken = default);
@@ -630,6 +633,131 @@ namespace SUCA_Compressor.Application.Conversion
                 await _registry.EnsureAsync(normalized, cancellationToken).ConfigureAwait(false);
 
             return await PersistRecordsAsync(records, cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<Result<int>> SetCollectionForManyAsync(IEnumerable<Guid> ids, string collection, CancellationToken cancellationToken = default)
+        {
+            string normalized = NormalizeCollection(collection);
+            if (string.IsNullOrWhiteSpace(normalized))
+                return Result<int>.Fail("El nombre de coleccion no es valido.", ConversionErrorCodes.InvalidCollection);
+
+            var wanted = (ids ?? Enumerable.Empty<Guid>()).Where(x => x != Guid.Empty).Distinct().ToList();
+            if (wanted.Count == 0)
+                return Result<int>.Fail("Selecciona al menos una imagen.", ConversionErrorCodes.InvalidCollection);
+
+            if (wanted.Count > 500)
+                return Result<int>.Fail("El lote no puede superar 500 imagenes.", ConversionErrorCodes.TooManyItems);
+
+            var records = (await _gallery.ListAsync(cancellationToken).ConfigureAwait(false)).ToList();
+            var set = wanted.ToHashSet();
+            var targets = records.Where(x => set.Contains(x.Id)).ToList();
+
+            if (targets.Count == 0)
+                return Result<int>.Fail("Ninguna de las imagenes indicadas existe.", ConversionErrorCodes.RecordNotFound);
+
+            foreach (ConversionRecord record in targets)
+                record.Collection = normalized;
+
+            if (_registry is not null)
+                await _registry.EnsureAsync(normalized, cancellationToken).ConfigureAwait(false);
+
+            Result persist = await PersistRecordsAsync(records, cancellationToken).ConfigureAwait(false);
+            if (!persist.IsSuccess)
+                return Result<int>.Fail(persist.Error ?? "No se pudo actualizar el manifiesto.", persist.ErrorCode);
+
+            _observability.RecordSuccess("collection-move", $"{targets.Count} -> {normalized}");
+            return Result<int>.Ok(targets.Count);
+        }
+
+        public async Task<Result<ConversionFileContent>> ExportArchiveAsync(IEnumerable<Guid> ids, string variant, CancellationToken cancellationToken = default)
+        {
+            var wanted = (ids ?? Enumerable.Empty<Guid>()).Where(x => x != Guid.Empty).Distinct().ToList();
+            if (wanted.Count == 0)
+                return Result<ConversionFileContent>.Fail("Selecciona al menos una imagen.", ConversionErrorCodes.InvalidCollection);
+
+            if (wanted.Count > 500)
+                return Result<ConversionFileContent>.Fail("El archivo no puede superar 500 imagenes.", ConversionErrorCodes.TooManyItems);
+
+            var set = wanted.ToHashSet();
+            var records = (await _gallery.ListAsync(cancellationToken).ConfigureAwait(false))
+                .Where(x => set.Contains(x.Id))
+                .OrderBy(x => x.OriginalFileName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (records.Count == 0)
+                return Result<ConversionFileContent>.Fail("Ninguna de las imagenes indicadas existe.", ConversionErrorCodes.RecordNotFound);
+
+            var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var buffer = new MemoryStream();
+
+            try
+            {
+                using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
+                {
+                    foreach (ConversionRecord record in records)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+
+                        ConversionFilePath info = BuildFilePath(record, variant);
+                        if (!info.Exists)
+                            continue;
+
+                        string entryName = UniqueEntryName(used, record, variant, info.FileName);
+                        ZipArchiveEntry entry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
+
+                        await using Stream entryStream = entry.Open();
+                        await using FileStream source = new(
+                            info.Path,
+                            FileMode.Open,
+                            FileAccess.Read,
+                            FileShare.Read,
+                            81920,
+                            useAsync: true);
+
+                        await source.CopyToAsync(entryStream, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+
+                _observability.RecordSuccess("images-export", $"{records.Count} archivo(s), variante={variant}");
+                return Result<ConversionFileContent>.Ok(new ConversionFileContent
+                {
+                    Bytes = buffer.ToArray(),
+                    ContentType = "application/zip",
+                    DownloadName = $"suca-{DateTime.UtcNow:yyyyMMdd-HHmmss}.zip"
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                return Result<ConversionFileContent>.Fail("Exportacion cancelada.", ConversionErrorCodes.Cancelled);
+            }
+            catch (Exception ex)
+            {
+                _observability.RecordFailure("images-export", ex, "");
+                return Result<ConversionFileContent>.Fail($"No se pudo crear el ZIP: {ex.Message}", ConversionErrorCodes.IoError);
+            }
+            finally
+            {
+                await buffer.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+
+        private static string UniqueEntryName(HashSet<string> used, ConversionRecord record, string variant, string fileName)
+        {
+            string baseName = SanitizeFileName(fileName);
+            if (string.IsNullOrWhiteSpace(baseName))
+                baseName = record.Id.ToString("N");
+
+            string candidate = baseName;
+            int suffix = 2;
+            while (!used.Add(candidate))
+            {
+                string stem = Path.GetFileNameWithoutExtension(baseName);
+                string extension = Path.GetExtension(baseName);
+                candidate = $"{stem}-{suffix}{extension}";
+                suffix += 1;
+            }
+
+            return variant == "original" ? $"original/{candidate}" : candidate;
         }
 
         public async Task<IReadOnlyList<CollectionSummary>> ListCollectionsAsync(CancellationToken cancellationToken = default)

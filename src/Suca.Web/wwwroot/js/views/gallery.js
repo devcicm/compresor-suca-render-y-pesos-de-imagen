@@ -1,6 +1,6 @@
 import {
   state, el, escapeHtml, formatBytes, toast,
-  fetchJson, copyTextToClipboard
+  fetchJson, copyTextToClipboard, settingsReady
 } from "../main.js";
 import { openOverlay, closeOverlay, enableListNavigation } from "../a11y.js";
 
@@ -8,15 +8,70 @@ let initialized = false;
 let activeCollection = "";
 let detailId = null;
 let lastItems = [];
+const selectedIds = new Set();
+let currentPage = 1;
+let loadedItems = [];
 
 export function initGalleryView() {
   if (initialized) return;
   initialized = true;
 
   el("refresh-gallery-button").addEventListener("click", () => void loadGallery());
+  el("gallery-load-more").addEventListener("click", () => void loadGallery(true));
   el("reveal-storage-button").addEventListener("click", () => void revealStorage());
   el("copy-paths-button").addEventListener("click", () => void copyVisiblePaths());
   el("create-collection-button").addEventListener("click", () => void createCollection());
+
+  // Buscador, orden y vistas
+  let searchTimer = 0;
+  el("gallery-search").addEventListener("input", () => {
+    window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(() => renderGrid(applyFiltersAndSort(loadedItems)), 200);
+  });
+  el("gallery-sort").addEventListener("change", () => renderGrid(applyFiltersAndSort(loadedItems)));
+
+  el("view-grid").addEventListener("click", () => {
+    localStorage.setItem("suca.gallery.view", "grid");
+    applyViewState();
+    renderGrid(applyFiltersAndSort(loadedItems));
+  });
+  el("view-list").addEventListener("click", () => {
+    localStorage.setItem("suca.gallery.view", "list");
+    applyViewState();
+    renderGrid(applyFiltersAndSort(loadedItems));
+  });
+  el("density-toggle").addEventListener("click", () => {
+    const next = document.body.getAttribute("data-gallery-compact") !== "true";
+    localStorage.setItem("suca.gallery.compact", String(next));
+    applyViewState();
+  });
+
+  // Seleccion en lote
+  el("select-page-button").addEventListener("click", () => {
+    applyFiltersAndSort(loadedItems).forEach((item) => selectedIds.add(item.id));
+    renderGrid(applyFiltersAndSort(loadedItems));
+  });
+  el("selection-clear").addEventListener("click", clearSelection);
+  el("selection-download-zip").addEventListener("click", () => void downloadSelectionZip());
+  el("selection-copy-paths").addEventListener("click", () => void copySelectionPaths());
+  el("selection-move").addEventListener("click", () => void moveSelection());
+  el("selection-delete").addEventListener("click", () => void deleteSelection());
+
+  // Comparador y lightbox
+  el("compare-close").addEventListener("click", () => closeOverlay(el("compare-overlay")));
+  el("compare-range").addEventListener("input", onCompareRange);
+  el("lightbox-close").addEventListener("click", () => closeOverlay(el("lightbox-overlay")));
+  el("lightbox-prev").addEventListener("click", () => moveLightbox(-1));
+  el("lightbox-next").addEventListener("click", () => moveLightbox(1));
+
+  // Navegacion con teclado dentro de la galeria.
+  document.addEventListener("keydown", (event) => {
+    if (event.target instanceof Element && event.target.matches("input, textarea, select")) return;
+    if (!el("lightbox-overlay").hidden) {
+      if (event.key === "ArrowLeft") moveLightbox(-1);
+      if (event.key === "ArrowRight") moveLightbox(1);
+    }
+  });
   el("detail-close").addEventListener("click", closeDetail);
   el("detail-overlay").addEventListener("click", (event) => {
     if (event.target === el("detail-overlay")) closeDetail();
@@ -40,26 +95,347 @@ export function initGalleryView() {
   const requested = new URLSearchParams(window.location.search).get("detalle");
   if (requested) {
     void (async () => {
+      await settingsReady;
       await loadGallery();
       await openDetail(requested);
     })();
     return;
   }
 
-  void loadGallery();
+  // La galeria depende de web.galleryPageSize: espera a que los ajustes esten
+  // cargados para no traer todos los registros y luego recargar.
+  void settingsReady.then(() => loadGallery());
   enableListNavigation(el("gallery-grid"), ".gallery-card");
 }
 
-async function loadGallery() {
+async function loadGallery(append = false) {
   try {
+    const pageSize = Number(state.settings.values.web?.galleryPageSize) || 24;
     const url = activeCollection
-      ? `/api/web/images?collection=${encodeURIComponent(activeCollection)}`
-      : "/api/web/images";
+      ? `/api/web/images?collection=${encodeURIComponent(activeCollection)}&page=${append ? currentPage + 1 : 1}&pageSize=${pageSize}`
+      : `/api/web/images?page=${append ? currentPage + 1 : 1}&pageSize=${pageSize}`;
     const data = await fetchJson(url);
+    const items = data.items || [];
+    const total = Number(data.total) || items.length;
+
+    if (!append) {
+      currentPage = 1;
+      loadedItems = items;
+    } else {
+      currentPage += 1;
+      // Deduplica por id: si la pagina llega repetida no inflamos la lista.
+      const known = new Set(loadedItems.map((item) => item.id));
+      loadedItems = loadedItems.concat(items.filter((item) => !known.has(item.id)));
+    }
+
     renderCollections();
-    renderGrid(data.items || []);
+    applyViewState();
+    renderGrid(applyFiltersAndSort(loadedItems));
+
+    const remaining = Math.max(0, total - loadedItems.length);
+    el("gallery-load-more").hidden = remaining === 0;
+    el("gallery-load-more").textContent = `Cargar mas (${remaining} restantes)`;
   } catch (error) {
     toast(`No se pudo cargar la galeria: ${error.message}`, "error");
+  }
+}
+
+/* ============================== Busqueda, orden y vistas ============================== */
+
+function applyFiltersAndSort(items) {
+  const query = el("gallery-search").value.trim().toLowerCase();
+  let filtered = query
+    ? items.filter((item) => (item.originalFileName || "").toLowerCase().includes(query))
+    : items.slice();
+
+  const sort = el("gallery-sort").value;
+  filtered.sort((a, b) => {
+    switch (sort) {
+      case "saving":
+        return (a.savingPercent || 0) - (b.savingPercent || 0);
+      case "size":
+        return (b.convertedBytes || 0) - (a.convertedBytes || 0);
+      case "name":
+        return String(a.originalFileName || "").localeCompare(String(b.originalFileName || ""));
+      default:
+        return new Date(b.createdAtUtc || 0) - new Date(a.createdAtUtc || 0);
+    }
+  });
+
+  return filtered;
+}
+
+function applyViewState() {
+  const body = document.body;
+  const view = localStorage.getItem("suca.gallery.view") || "grid";
+  const compact = localStorage.getItem("suca.gallery.compact") === "true";
+
+  body.setAttribute("data-gallery-view", view);
+  body.setAttribute("data-gallery-compact", String(compact));
+
+  el("view-grid").setAttribute("aria-pressed", String(view === "grid"));
+  el("view-grid").setAttribute("data-active", String(view === "grid"));
+  el("view-list").setAttribute("aria-pressed", String(view === "list"));
+  el("view-list").setAttribute("data-active", String(view === "list"));
+  el("density-toggle").setAttribute("aria-pressed", String(compact));
+}
+
+function renderGrid(items) {
+  const grid = el("gallery-grid");
+  grid.innerHTML = "";
+  lastItems = items;
+
+  el("gallery-empty").hidden = items.length > 0;
+  el("gallery-count").textContent = items.length === 0
+    ? ""
+    : `${items.length} imagen(es)${activeCollection ? ` en ${activeCollection}` : ""}`;
+
+  for (const record of items) {
+    const card = document.createElement("article");
+    card.className = "gallery-card";
+    card.setAttribute("tabindex", "0");
+    card.setAttribute("data-nav-item", "true");
+    card.setAttribute("data-id", record.id);
+    if (selectedIds.has(record.id)) card.setAttribute("data-selected", "true");
+    card.setAttribute("aria-label", record.originalFileName);
+    card.innerHTML = `
+      <div class="g-select">
+        <input type="checkbox" data-select="${record.id}"${selectedIds.has(record.id) ? " checked" : ""} aria-label="Seleccionar ${escapeHtml(record.originalFileName)}">
+      </div>
+      <img src="/api/web/images/${record.id}/file?variant=converted" alt="${escapeHtml(record.originalFileName)}" data-open="${record.id}" loading="lazy" decoding="async">
+      <div class="g-body">
+        <div class="g-name">${escapeHtml(record.originalFileName)}</div>
+        <div class="chip-row">
+          <span class="chip" data-kind="accent">${escapeHtml(String(record.format).toUpperCase())}</span>
+          <span class="chip" data-kind="ok">-${Math.abs(record.savingPercent).toFixed(1)}%</span>
+          <span class="chip">${escapeHtml(record.collection)}</span>
+        </div>
+        <div class="g-meta">${formatBytes(record.originalBytes)} &rarr; ${formatBytes(record.convertedBytes)} \u00b7 ${escapeHtml(new Date(record.createdAtUtc).toLocaleString())}</div>
+        <div class="btn-row">
+          <button type="button" class="btn" data-copy="${record.id}">Base64</button>
+          <button type="button" class="btn" data-path="${record.id}" data-tip-title="Copiar ruta" data-tip="Copia la ruta completa del archivo convertido en disco." data-tip-pos="top" tabindex="0" role="note">Ruta</button>
+          <button type="button" class="btn" data-reveal="${record.id}">Abrir</button>
+          <button type="button" class="btn" data-compare="${record.id}">Comparar</button>
+          <button type="button" class="btn" data-zoom="${record.id}">Ampliar</button>
+          <a class="btn" href="/api/web/images/${record.id}/file?variant=converted" download>Descargar</a>
+          <button type="button" class="btn btn-danger" data-delete="${record.id}">Eliminar</button>
+        </div>
+      </div>`;
+
+    grid.appendChild(card);
+  }
+
+  grid.querySelectorAll("img[data-open]").forEach((img) => {
+    img.addEventListener("click", () => void openDetail(img.dataset.open));
+  });
+  grid.querySelectorAll("input[data-select]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const id = input.dataset.select;
+      if (input.checked) {
+        selectedIds.add(id);
+      } else {
+        selectedIds.delete(id);
+      }
+      input.closest(".gallery-card")?.setAttribute("data-selected", String(input.checked));
+      renderSelectionBar();
+    });
+  });
+  grid.querySelectorAll("button[data-copy]").forEach((button) => {
+    button.addEventListener("click", () => void copyBase64(button.dataset.copy, "converted"));
+  });
+  grid.querySelectorAll("button[data-path]").forEach((button) => {
+    button.addEventListener("click", () => void copyPath(button.dataset.path, "converted"));
+  });
+  grid.querySelectorAll("button[data-reveal]").forEach((button) => {
+    button.addEventListener("click", () => void revealFile(button.dataset.reveal, "converted"));
+  });
+  grid.querySelectorAll("button[data-compare]").forEach((button) => {
+    button.addEventListener("click", () => void openCompare(button.dataset.compare));
+  });
+  grid.querySelectorAll("button[data-zoom]").forEach((button) => {
+    button.addEventListener("click", () => openLightbox(button.dataset.zoom));
+  });
+  grid.querySelectorAll("button[data-delete]").forEach((button) => {
+    button.addEventListener("click", () => void deleteImage(button.dataset.delete));
+  });
+
+  renderSelectionBar();
+}
+
+/* ============================== Seleccion en lote ============================== */
+
+function renderSelectionBar() {
+  const bar = el("selection-bar");
+  bar.hidden = selectedIds.size === 0;
+  el("selection-count").textContent = `${selectedIds.size} seleccionada(s)`;
+}
+
+function clearSelection() {
+  selectedIds.clear();
+  document.querySelectorAll("#gallery-grid input[data-select]").forEach((input) => {
+    input.checked = false;
+  });
+  document.querySelectorAll("#gallery-grid .gallery-card").forEach((card) => {
+    card.removeAttribute("data-selected");
+  });
+  renderSelectionBar();
+}
+
+async function downloadSelectionZip() {
+  const ids = Array.from(selectedIds);
+  if (ids.length === 0) return;
+
+  toast(`Generando ZIP de ${ids.length} imagen(es)...`, "info");
+  try {
+    const response = await fetch("/api/web/images/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids, variant: "converted" })
+    });
+
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      throw new Error(body?.error || `HTTP ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const disposition = response.headers.get("content-disposition") || "";
+    const match = disposition.match(/filename\*=UTF-8''([^;]+)/i) || disposition.match(/filename=([^;]+)/i);
+    const fileName = match ? decodeURIComponent(match[1].trim().replace(/"/g, "")) : "suca.zip";
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    link.click();
+    URL.revokeObjectURL(url);
+
+    toast(`ZIP descargado: ${fileName}`, "info");
+  } catch (error) {
+    toast(`No se pudo generar el ZIP: ${error.message}`, "error");
+  }
+}
+
+async function copySelectionPaths() {
+  const ids = Array.from(selectedIds);
+  if (ids.length === 0) return;
+
+  try {
+    const paths = await fetchJson("/api/web/images/paths", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids, variant: "converted" })
+    });
+
+    const list = Array.isArray(paths) ? paths : paths.paths || [];
+    const text = list.map((item) => item.path).join("\n");
+    const ok = await copyTextToClipboard(text);
+    toast(ok ? `Rutas copiadas (${list.length}).` : "No se pudo copiar al portapapeles.", ok ? "info" : "error");
+  } catch (error) {
+    toast(`No se pudieron copiar las rutas: ${error.message}`, "error");
+  }
+}
+
+async function moveSelection() {
+  const ids = Array.from(selectedIds);
+  const collection = el("selection-move-name").value.trim();
+  if (ids.length === 0 || !collection) {
+    toast("Selecciona imagenes y escribe la coleccion destino.", "warn");
+    return;
+  }
+
+  try {
+    const result = await fetchJson("/api/web/images/collection", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids, collection })
+    });
+
+    toast(`${result.moved} imagen(es) movidas a ${result.collection}.`, "info");
+    el("selection-move-name").value = "";
+    clearSelection();
+    await loadGallery();
+  } catch (error) {
+    toast(`No se pudo mover: ${error.message}`, "error");
+  }
+}
+
+async function deleteSelection() {
+  const ids = Array.from(selectedIds);
+  if (ids.length === 0) return;
+  if (!window.confirm(`Eliminar ${ids.length} imagen(es) de la galeria? Esta accion no se puede deshacer.`)) return;
+
+  let removed = 0;
+  for (const id of ids) {
+    const response = await fetch(`/api/web/images/${id}`, { method: "DELETE" });
+    if (response.ok || response.status === 404) removed += 1;
+  }
+
+  toast(`${removed} imagen(es) eliminadas.`, "info");
+  clearSelection();
+  await loadGallery();
+}
+
+/* ============================== Comparador ============================== */
+
+async function openCompare(id) {
+  const record = lastItems.find((item) => item.id === id);
+  if (!record) return;
+
+  el("compare-original").src = `/api/web/images/${id}/file?variant=original`;
+  el("compare-converted").src = `/api/web/images/${id}/file?variant=converted`;
+  el("compare-range").value = "50";
+  el("compare-original").style.clipPath = "inset(0 50% 0 0)";
+  el("compare-metrics").textContent =
+    `${record.originalWidth}x${record.originalHeight} -> ${record.convertedWidth}x${record.convertedHeight} \u00b7 ` +
+    `${formatBytes(record.originalBytes)} -> ${formatBytes(record.convertedBytes)} \u00b7 -${Math.abs(record.savingPercent).toFixed(1)}%`;
+
+  openOverlay(el("compare-overlay"));
+}
+
+function onCompareRange() {
+  const value = Number(el("compare-range").value);
+  // El deslizador recorta la original por la derecha para revelar la convertida.
+  el("compare-original").style.clipPath = `inset(0 ${100 - value}% 0 0)`;
+}
+
+/* ============================== Lightbox ============================== */
+
+let lightboxIndex = -1;
+
+function openLightbox(id) {
+  if (lastItems.length === 0) return;
+  const index = lastItems.findIndex((item) => item.id === id);
+  lightboxIndex = index >= 0 ? index : 0;
+  paintLightbox();
+  openOverlay(el("lightbox-overlay"));
+}
+
+function paintLightbox() {
+  const record = lastItems[lightboxIndex];
+  if (!record) return;
+
+  el("lightbox-image").src = `/api/web/images/${record.id}/file?variant=converted`;
+  el("lightbox-image").alt = record.originalFileName;
+  el("lightbox-caption").textContent =
+    `${record.originalFileName} \u00b7 ${record.originalWidth}x${record.originalHeight} \u00b7 ` +
+    `${formatBytes(record.convertedBytes)} \u00b7 -${Math.abs(record.savingPercent).toFixed(1)}% \u00b7 ` +
+    `${lightboxIndex + 1}/${lastItems.length}`;
+}
+
+function moveLightbox(step) {
+  if (lastItems.length === 0) return;
+  lightboxIndex = (lightboxIndex + step + lastItems.length) % lastItems.length;
+  paintLightbox();
+}
+
+async function deleteImage(id) {
+  if (!window.confirm("Eliminar esta imagen de la galeria?")) return;
+  const response = await fetch(`/api/web/images/${id}`, { method: "DELETE" });
+  if (response.ok || response.status === 404) {
+    toast("Imagen eliminada.", "info");
+    if (detailId === id) closeDetail();
+    await loadGallery();
   }
 }
 
@@ -214,66 +590,6 @@ async function dissolveCollection(name) {
   }
 }
 
-function renderGrid(items) {
-  const grid = el("gallery-grid");
-  grid.innerHTML = "";
-  el("gallery-empty").hidden = items.length > 0;
-  lastItems = items;
-
-  for (const record of items) {
-    const card = document.createElement("article");
-    card.className = "gallery-card";
-    card.setAttribute("tabindex", "0");
-    card.setAttribute("data-nav-item", "true");
-    card.setAttribute("aria-label", record.originalFileName);
-    card.innerHTML = `
-      <img src="/api/web/images/${record.id}/file?variant=converted" alt="${escapeHtml(record.originalFileName)}" data-open="${record.id}">
-      <div class="g-body">
-        <div class="g-name">${escapeHtml(record.originalFileName)}</div>
-        <div class="chip-row">
-          <span class="chip" data-kind="accent">${escapeHtml(String(record.format).toUpperCase())}</span>
-          <span class="chip" data-kind="ok">-${Math.abs(record.savingPercent).toFixed(1)}%</span>
-          <span class="chip">${escapeHtml(record.collection)}</span>
-        </div>
-        <div class="g-meta">${formatBytes(record.originalBytes)} &rarr; ${formatBytes(record.convertedBytes)} · ${escapeHtml(new Date(record.createdAtUtc).toLocaleString())}</div>
-        <div class="btn-row">
-          <button type="button" class="btn" data-copy="${record.id}">Base64</button>
-          <button type="button" class="btn" data-path="${record.id}" data-tip-title="Copiar ruta" data-tip="Copia la ruta completa del archivo convertido en disco." data-tip-pos="top" tabindex="0" role="note">Ruta</button>
-          <button type="button" class="btn" data-reveal="${record.id}">Abrir</button>
-          <a class="btn" href="/api/web/images/${record.id}/file?variant=converted" download>Descargar</a>
-          <button type="button" class="btn btn-danger" data-delete="${record.id}">Eliminar</button>
-        </div>
-      </div>`;
-
-    grid.appendChild(card);
-  }
-
-  grid.querySelectorAll("img[data-open]").forEach((img) => {
-    img.addEventListener("click", () => void openDetail(img.dataset.open));
-  });
-  grid.querySelectorAll("button[data-copy]").forEach((button) => {
-    button.addEventListener("click", () => void copyBase64(button.dataset.copy, "converted"));
-  });
-  grid.querySelectorAll("button[data-path]").forEach((button) => {
-    button.addEventListener("click", () => void copyPath(button.dataset.path, "converted"));
-  });
-  grid.querySelectorAll("button[data-reveal]").forEach((button) => {
-    button.addEventListener("click", () => void revealFile(button.dataset.reveal, "converted"));
-  });
-  grid.querySelectorAll("button[data-delete]").forEach((button) => {
-    button.addEventListener("click", () => void deleteImage(button.dataset.delete));
-  });
-}
-
-async function deleteImage(id) {
-  if (!window.confirm("Eliminar esta imagen de la galeria?")) return;
-  const response = await fetch(`/api/web/images/${id}`, { method: "DELETE" });
-  if (response.ok || response.status === 404) {
-    toast("Imagen eliminada.", "info");
-    if (detailId === id) closeDetail();
-    await loadGallery();
-  }
-}
 
 async function deleteFromDetail() {
   if (!detailId) return;
@@ -433,3 +749,4 @@ async function copyVisiblePaths() {
     toast(`No se pudieron copiar las rutas: ${error.message}`, "error");
   }
 }
+

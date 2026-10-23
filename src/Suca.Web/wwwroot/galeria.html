@@ -50,9 +50,81 @@
       <div id="collections-admin-list" class="orders-list"></div>
     </details>
 
+    <div class="card gallery-toolbar">
+      <label class="field field-inline">
+        <span class="field-label">Buscar
+          <span class="tip-dot" data-tip-title="Buscar" data-tip="Filtra por nombre de archivo entre las imagenes visibles. Se aplica al instante sobre la pagina cargada." tabindex="0" role="note">?</span>
+        </span>
+        <input id="gallery-search" type="search" placeholder="nombre de archivo...">
+      </label>
+      <label class="field field-inline">
+        <span class="field-label">Ordenar por
+          <span class="tip-dot" data-tip-title="Ordenar" data-tip="Ordena los resultados: mas recientes, mayor ahorro, mayor tamano o nombre alfabetico." tabindex="0" role="note">?</span>
+        </span>
+        <select id="gallery-sort">
+          <option value="recent">Mas recientes</option>
+          <option value="saving">Mayor ahorro</option>
+          <option value="size">Mayor tamano</option>
+          <option value="name">Nombre (A-Z)</option>
+        </select>
+      </label>
+      <div class="view-toggles" role="group" aria-label="Vista y densidad">
+        <button id="view-grid" type="button" class="btn" data-active="true" aria-pressed="true">Cuadricula</button>
+        <button id="view-list" type="button" class="btn" aria-pressed="false">Lista</button>
+        <button id="density-toggle" type="button" class="btn" aria-pressed="false">Compacta
+          <span class="tip-dot" data-tip-title="Densidad" data-tip="Alterna entre tarjetas normales y compactas para ver mas imagenes a la vez." data-tip-pos="top" tabindex="0" role="note">?</span>
+        </button>
+      </div>
+      <button id="select-page-button" type="button" class="btn">Seleccionar pagina</button>
+    </div>
+
+    <div id="selection-bar" class="selection-bar" hidden>
+      <span id="selection-count" class="chip" data-kind="accent">0 seleccionadas</span>
+      <button id="selection-clear" type="button" class="btn">Quitar seleccion</button>
+      <button id="selection-download-zip" type="button" class="btn btn-primary">Descargar ZIP</button>
+      <button id="selection-copy-paths" type="button" class="btn">Copiar rutas</button>
+      <label class="field field-inline">
+        <span class="field-label">Mover a</span>
+        <input id="selection-move-name" type="text" list="collection-list" placeholder="coleccion">
+      </label>
+      <button id="selection-move" type="button" class="btn">Mover</button>
+      <button id="selection-delete" type="button" class="btn btn-danger">Eliminar</button>
+    </div>
+
     <div id="gallery-grid" class="gallery-grid"></div>
     <p id="gallery-empty" class="muted-note" hidden>Todavia no hay imagenes convertidas.</p>
+    <div class="load-more-row">
+      <button id="gallery-load-more" type="button" class="btn" hidden>Cargar mas</button>
+      <span id="gallery-count" class="muted-note"></span>
+    </div>
   </main>
+
+  <div id="compare-overlay" class="overlay" hidden>
+    <div class="card detail-card">
+      <header class="card-head">
+        <h3 id="compare-title">Comparar original y convertida
+          <span class="tip-dot" data-tip-title="Comparador" data-tip="Arrastra el deslizador para superponer la original sobre la convertida y ver cuanto mejora la compresion." data-tip-pos="top" tabindex="0" role="note">?</span>
+        </h3>
+        <button id="compare-close" type="button" class="btn">Cerrar</button>
+      </header>
+      <div class="compare-stage">
+        <img id="compare-converted" alt="Imagen convertida">
+        <img id="compare-original" alt="Imagen original" class="compare-original">
+        <input id="compare-range" type="range" min="0" max="100" value="50" aria-label="Posicion del deslizador">
+      </div>
+      <p id="compare-metrics" class="muted-note"></p>
+    </div>
+  </div>
+
+  <div id="lightbox-overlay" class="overlay lightbox" hidden>
+    <div class="lightbox-body">
+      <button id="lightbox-prev" type="button" class="btn" aria-label="Anterior">&#8592;</button>
+      <img id="lightbox-image" alt="Imagen ampliada">
+      <button id="lightbox-next" type="button" class="btn" aria-label="Siguiente">&#8594;</button>
+      <button id="lightbox-close" type="button" class="btn" aria-label="Cerrar">&#2715;</button>
+    </div>
+    <p id="lightbox-caption" class="lightbox-caption"></p>
+  </div>
 
   <div id="detail-overlay" class="overlay" hidden>
     <div class="detail-card card">

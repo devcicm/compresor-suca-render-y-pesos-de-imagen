@@ -103,7 +103,7 @@ Una coleccion es una categoria (ej.: `facturas`, `lote-shell`). Se asigna al sub
 - `POST /api/web/collections` (body `{"name":"lote-x"}`): crea una coleccion vacia. `201` si se creo; `409` `collection-exists` si ya existe; `400` `invalid-collection` si el nombre es invalido o es `general` (reservada).
 - `PUT /api/web/collections/{name}` (body `{"newName":"nuevo"}`): renombra y actualiza todas sus imagenes y el registro; mismos errores (`collection-exists`, `collection-not-found`, `invalid-collection` para `general` o nombre vacio).
 - `GET /api/web/collections/{name}/images`: JSON enriquecido con grupos `input` (formato, dimensiones, bytes, MPx, EXIF), `output` (formato, calidad, bpp, ratio, alpha, duracion), `metrics`, `links`, y **base64/dataUrl** de la imagen convertida. Parametros: `includeBase64` (default `true`), `originalBase64` (default `false`), `page`, `pageSize`.
-- `GET /api/web/images?collection={name}`: listado filtrado.
+- `GET /api/web/images?collection={name}`: listado filtrado. Acepta `page` y `pageSize` (1-200; si se omiten devuelve todo para no romper clientes existentes) e incluye `total`, `page`, `pageSize` e `items`.
 - `PUT /api/web/images/{id}/collection` (body `{"collection":"nombre"}`): reasignar (registra la coleccion si era nueva).
 - `DELETE /api/web/collections/{name}?confirm=true`: disuelve la coleccion; las imagenes pasan a `general` (no borra archivos).
 
@@ -132,7 +132,8 @@ Los grupos REST principales son:
 - `POST /api/tools/ocr`, `/weight-map`, `/embedding` y `/local-rag/query` para capacidades visuales locales.
 - `GET /api/lmstudio/models` y `POST /api/tools/lmstudio/*` para modelos, RAG, vision e insight mediante LM Studio.
 - `GET /api/minichat/*` y `POST /api/minichat/*` para conversaciones y entrega de mensajes.
-- `POST /api/web/convert` (multipart con `engine`, `format`, `quality`, `maxWidth`, `maxHeight`, `removeMetadata`, `collection`, `correlationId`), `GET /api/web/images[?collection=]`, `GET /api/web/images/{id}/file`, `GET /api/web/images/{id}/base64` y `DELETE /api/web/images/{id}` para el servicio de conversion, galeria y recuperacion base64.
+- `POST /api/web/convert` (multipart con `engine`, `format`, `quality`, `maxWidth`, `maxHeight`, `removeMetadata`, `collection`, `correlationId`), `GET /api/web/images[?collection=&page=&pageSize=]`, `GET /api/web/images/{id}/file`, `GET /api/web/images/{id}/base64` y `DELETE /api/web/images/{id}` para el servicio de conversion, galeria y recuperacion base64.
+- Acciones en lote de la galeria: `POST /api/web/images/export` (body `{"ids":[...],"variant":"converted"}`) devuelve un ZIP (`application/zip`, nombres deduplicados; con `variant=original` los archivos van en la subcarpeta `original/`) y `POST /api/web/images/collection` (body `{"ids":[...],"collection":"nombre"}`) mueve varias imagenes registrando la coleccion destino. Maximo 500 ids por peticion.
 - `POST /api/web/orders` y sus endpoints de estado/control (ver seccion de ordenes); `GET /api/web/folders?path=` para el explorador de carpetas del servidor y `POST /api/web/orders/preview` para validar antes de convertir.
 - `GET /api/web/collections`, `POST /api/web/collections`, `PUT /api/web/collections/{name}`, `GET /api/web/collections/{name}/images`, `PUT /api/web/images/{id}/collection` y `DELETE /api/web/collections/{name}` para el CRUD de colecciones.
 - `GET /api/settings/effective`, `GET|PUT /api/settings/{scope}` y `POST /api/settings/{scope}/reset` para los ajustes de sistema y usuario.

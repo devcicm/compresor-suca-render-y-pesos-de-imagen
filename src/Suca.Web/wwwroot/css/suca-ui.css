@@ -1,5 +1,5 @@
-﻿/* ==========================================================================
-   SUCA UI â€” design tokens
+/* ==========================================================================
+   SUCA UI \u201d design tokens
    ========================================================================== */
 :root {
   color-scheme: light;
@@ -842,7 +842,7 @@ body[data-nav-collapsed="true"] .svc-secondary a {
 }
 
 /* ==========================================================================
-   Tooltips (info-dot) â€” CSS + estado por JS para tap
+   Tooltips (info-dot) \u201d CSS + estado por JS para tap
    ========================================================================== */
 .tip-dot {
   display: inline-grid;
@@ -1196,4 +1196,197 @@ body[data-nav-collapsed="true"] .svc-collapse .tip-dot { display: none; }
   align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
+}
+
+/* --- Galeria: barra de herramientas, seleccion y vistas --- */
+.gallery-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-3);
+}
+
+.gallery-toolbar .field-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 190px;
+}
+
+.gallery-toolbar input[type="search"],
+.gallery-toolbar select {
+  font: inherit;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  background: var(--color-panel-strong);
+  color: var(--color-ink);
+}
+
+.view-toggles {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.view-toggles [data-active="true"] {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.selection-bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+}
+
+.selection-bar input[type="text"] {
+  font: inherit;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  padding: 5px 9px;
+  background: var(--color-panel-strong);
+  color: var(--color-ink);
+}
+
+.load-more-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  justify-content: center;
+  margin-top: var(--space-3);
+}
+
+/* Casilla de seleccion en cada tarjeta */
+.gallery-card {
+  position: relative;
+}
+
+.gallery-card .g-select {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+}
+
+.gallery-card .g-select input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.gallery-card[data-selected="true"] {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+body[data-gallery-view="list"] .gallery-grid {
+  grid-template-columns: 1fr;
+}
+
+body[data-gallery-view="list"] .gallery-card {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: var(--space-3);
+  align-items: start;
+}
+
+body[data-gallery-view="list"] .gallery-card img {
+  width: 120px;
+  height: 88px;
+  object-fit: cover;
+}
+
+body[data-gallery-compact="true"] .gallery-grid {
+  gap: var(--space-2);
+}
+
+body[data-gallery-compact="true"] .gallery-card .g-meta,
+body[data-gallery-compact="true"] .gallery-card .g-body .btn-row {
+  display: none;
+}
+
+/* --- Comparador original/convertida --- */
+.compare-stage {
+  position: relative;
+  display: grid;
+  grid-template-areas: "stack" "range";
+  justify-items: center;
+  margin-top: var(--space-3);
+  background: var(--color-panel-strong);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.compare-stage img {
+  grid-area: stack;
+  align-self: start;
+  max-width: 100%;
+  max-height: 52vh;
+  display: block;
+}
+
+/* Ambas imagenes comparten el mismo origen (arriba a la izquierda) para que el
+   deslizador compare la misma zona y no dos recuadros desalineados. */
+.compare-stage img {
+  grid-area: stack;
+  width: min(100%, 1100px);
+  object-fit: contain;
+}
+
+.compare-original {
+  clip-path: inset(0 50% 0 0);
+}
+
+#compare-range {
+  grid-area: range;
+  width: 100%;
+  margin-top: var(--space-2);
+}
+
+/* --- Lightbox --- */
+.overlay.lightbox {
+  align-items: center;
+}
+
+.lightbox-body {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas: "prev img next";
+  gap: var(--space-3);
+  align-items: center;
+  width: min(92vw, 1400px);
+}
+
+.lightbox-body img {
+  grid-area: img;
+  max-width: 100%;
+  max-height: 78vh;
+  object-fit: contain;
+  background: var(--color-panel-strong);
+  border-radius: var(--radius-sm);
+}
+
+.lightbox-body #lightbox-prev { grid-area: prev; }
+.lightbox-body #lightbox-next { grid-area: next; }
+
+.lightbox-body #lightbox-close {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+}
+
+.lightbox-caption {
+  margin-top: var(--space-3);
+  text-align: center;
+  color: var(--color-muted);
 }

@@ -77,6 +77,26 @@ js/main.js       Estado global, ajustes, toasts, sondeo de /health y utilidades
   navegables usan `data-nav-item` y flechas; el progreso se anuncia con una region viva
   (`.visually-hidden`, `role="status"`).
 
+## Galeria: busqueda, seleccion y vistas
+
+- **Buscador y orden**: filtro por nombre (con rebote de 200 ms) y orden por recientes,
+  ahorro, tamaño o nombre. Ambos operan sobre la pagina cargada sin volver a pedirla.
+- **Seleccion multiple**: casilla en cada tarjeta, `Seleccionar pagina` y una barra fija
+  con ZIP, copiar rutas, mover a coleccion y eliminar. Las acciones de lote van al servidor:
+  `POST /api/web/images/export` (ZIP) y `POST /api/web/images/collection` (mover N imagenes).
+- **Comparador original/convertida**: modal con las dos imagenes alineadas en el mismo
+  encuadre y un deslizador que recorta la original para revelar la convertida, con las
+  metricas del par debajo.
+- **Lightbox**: pantalla completa con navegacion `←`/`→`, pie con posicion (`3/12`) y
+  cierre con `Escape`.
+- **Vistas y densidad**: cuadricula o lista, y tarjetas compactas; ambas se guardan en
+  `localStorage` (`suca.gallery.view`, `suca.gallery.compact`).
+- **Paginacion**: `Cargar mas` usa `page`/`pageSize` de `GET /api/web/images` (tambien
+  respeta `web.galleryPageSize`) y deduplica por id. Las imagenes usan `loading="lazy"`.
+- La galeria **espera a los ajustes** (`settingsReady` de `main.js`) antes de la primera
+  carga: asi el tamano de pagina real se aplica desde el principio y no se traen todos los
+  registros para volver a filtrar en cliente.
+
 ## Compresor: presets, carpetas y gestion de la cola
 
 - **Presets** (`conversion.presets` en los ajustes): perfil con motor, formato, calidad,

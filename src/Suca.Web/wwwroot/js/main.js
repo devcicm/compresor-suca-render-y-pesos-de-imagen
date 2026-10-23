@@ -24,7 +24,24 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Cada pagina notifica a su vista que los ajustes estan listos.
   document.dispatchEvent(new CustomEvent("suca:settings"));
+  resolveSettingsReady();
 });
+
+/* Promesa para esperar a los ajustes: evita que una vista cargue con los valores
+   por defecto y luego los recargue al llegar la configuracion real. */
+let settingsReadyResolver = null;
+const settingsReady = new Promise((resolve) => {
+  settingsReadyResolver = resolve;
+});
+
+function resolveSettingsReady() {
+  if (settingsReadyResolver) {
+    settingsReadyResolver();
+    settingsReadyResolver = null;
+  }
+}
+
+export { settingsReady };
 
 async function loadServerSettings() {
   try {

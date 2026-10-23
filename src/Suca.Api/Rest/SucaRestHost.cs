@@ -402,7 +402,7 @@ namespace SUCA_Compressor
                 return MapConversionOutcome(outcome);
             });
 
-            app.MapGet("/api/web/images", async (string? collection, IImageConversionService conversion, CancellationToken ct) =>
+            app.MapGet("/api/web/images", async (string? collection, int? page, int? pageSize, IImageConversionService conversion, CancellationToken ct) =>
             {
                 var records = await conversion.ListAsync(ct).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(collection))
@@ -411,7 +411,22 @@ namespace SUCA_Compressor
                     records = records.Where(x => string.Equals(x.Collection, normalized, StringComparison.OrdinalIgnoreCase)).ToList();
                 }
 
-                return Results.Ok(new { total = records.Count, items = records });
+                var ordered = records
+                    .OrderByDescending(x => x.CreatedAtUtc)
+                    .ThenBy(x => x.OriginalFileName, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                int total = ordered.Count;
+
+                // Sin paginacion explicita se devuelve todo (comportamiento previo).
+                if (page.HasValue || pageSize.HasValue)
+                {
+                    int size = Math.Clamp(pageSize ?? 24, 1, 200);
+                    int index = Math.Max(1, page ?? 1);
+                    ordered = ordered.Skip((index - 1) * size).Take(size).ToList();
+                }
+
+                return Results.Ok(new { total, page = page ?? 1, pageSize = pageSize ?? total, items = ordered });
             });
 
             app.MapGet("/api/web/images/{id:guid}", async (Guid id, IImageConversionService conversion, CancellationToken ct) =>
@@ -450,6 +465,46 @@ namespace SUCA_Compressor
                         statusCode: MapErrorCodeToStatus(outcome.ErrorCode));
 
                 return Results.Accepted("/api/web/convert", new { status = "cancel-requested", correlationId = correlationId.Trim() });
+            });
+
+            // ZIP con la seleccion de la galeria.
+            app.MapPost("/api/web/images/export", async (JsonElement payload, IImageConversionService conversion, CancellationToken ct) =>
+            {
+                List<Guid> ids = ReadGuidList(payload, "ids");
+                string variant = payload.TryGetProperty("variant", out JsonElement variantElement)
+                    ? variantElement.GetString() ?? "converted"
+                    : "converted";
+
+                Result<ConversionFileContent> outcome = await conversion
+                    .ExportArchiveAsync(ids, variant, ct)
+                    .ConfigureAwait(false);
+
+                if (!outcome.IsSuccess)
+                    return Results.Json(
+                        new { error = outcome.Error, errorCode = outcome.ErrorCode },
+                        statusCode: MapErrorCodeToStatus(outcome.ErrorCode));
+
+                ConversionFileContent archive = outcome.Value;
+                return Results.File(archive.Bytes, archive.ContentType, archive.DownloadName);
+            });
+
+            // Mover varias imagenes a una coleccion (accion en lote de la galeria).
+            app.MapPost("/api/web/images/collection", async (JsonElement payload, IImageConversionService conversion, CancellationToken ct) =>
+            {
+                List<Guid> ids = ReadGuidList(payload, "ids");
+                string name = payload.TryGetProperty("collection", out JsonElement collectionElement)
+                    ? collectionElement.GetString() ?? ""
+                    : "";
+
+                Result<int> outcome = await conversion
+                    .SetCollectionForManyAsync(ids, name, ct)
+                    .ConfigureAwait(false);
+
+                return outcome.IsSuccess
+                    ? Results.Ok(new { status = "moved", moved = outcome.Value, collection = ImageConversionService.NormalizeCollection(name) })
+                    : Results.Json(
+                        new { error = outcome.Error, errorCode = outcome.ErrorCode },
+                        statusCode: MapErrorCodeToStatus(outcome.ErrorCode));
             });
 
             app.MapDelete("/api/web/images/{id:guid}", async (Guid id, IImageConversionService conversion, CancellationToken ct) =>
@@ -1105,6 +1160,29 @@ namespace SUCA_Compressor
                 .ConfigureAwait(false);
 
             return MapConversionOutcome(outcome);
+        }
+
+        private static List<Guid> ReadGuidList(JsonElement payload, string property)
+        {
+            var ids = new List<Guid>();
+            if (!payload.TryGetProperty(property, out JsonElement array) || array.ValueKind != JsonValueKind.Array)
+                return ids;
+
+            foreach (JsonElement entry in array.EnumerateArray())
+            {
+                if (entry.ValueKind == JsonValueKind.String && Guid.TryParse(entry.GetString(), out Guid parsed))
+                {
+                    ids.Add(parsed);
+                }
+                else if (entry.ValueKind == JsonValueKind.Object
+                         && entry.TryGetProperty("id", out JsonElement idElement)
+                         && Guid.TryParse(idElement.GetString(), out Guid fromObject))
+                {
+                    ids.Add(fromObject);
+                }
+            }
+
+            return ids;
         }
 
         private static async Task<IResult> ConvertOrderFromMcpPayloadAsync(IServiceProvider services, JsonElement payload, CancellationToken token)
