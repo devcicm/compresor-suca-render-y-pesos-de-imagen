@@ -1,6 +1,6 @@
 # SUCA Web — Shell de Studio
 
-Un unico shell SPA (sin framework) sirve todos los servicios web. `index.html` es el punto de entrada; el enrutado es por hash y los modulos son ES Modules servidos estaticamente.
+Shell web sin framework que sirve los servicios de SUCA Studio. La navegacion es **multipage real**: cada servicio es su propia pagina HTML (paginas amigables `/studio/`, `/studio/galeria`, `/studio/chat`, `/studio/ajustes`, `/studio/actividad`) y los modulos son ES Modules servidos estaticamente, con un bootstrap por pagina (`js/pages/*.js`) que aísla los errores de inicio.
 
 ## Estructura
 

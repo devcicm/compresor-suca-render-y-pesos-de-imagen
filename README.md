@@ -6,7 +6,24 @@ SUCA es un compresor de imagenes. El kernel de compresion es el producto princip
 
 La estructura ya expresa los limites de los contextos, pero el codigo aun se compila como un unico ejecutable .NET (`ConsoleApp suca compress.csproj`). No debe presentarse como una solucion multi-proyecto terminada: la extraccion fisica de las clases de apoyo que aun viven en `src/Suca.Kernel/SucaCompressionKernel.cs` sigue pendiente.
 
-`legacy/` contiene implementaciones historicas y el proyecto las excluye de la compilacion. `runtime/` contiene galeria de conversiones, ordenes, ajustes, indices, conversaciones y resultados locales; esta ignorado por Git para no versionar datos generados ni contenido de usuarios.
+`legacy/` contiene la version base historica del compresor (la idea original del proyecto); el `.csproj` la excluye de la compilacion y no debe modificarse. `runtime/` contiene galeria de conversiones, ordenes, ajustes, indices, conversaciones y resultados locales; esta ignorado por Git para no versionar datos generados ni contenido de usuarios.
+
+**Pruebas**: todavia no hay suites automatizadas; la verificacion actual es manual y guida por navegador (ver [Estrategia de pruebas](tests/README.md), donde estan las 9 unidades priorizadas para las futuras suites). La integracion continua valida compilacion e higiene del repositorio en cada `push`.
+
+## Datos y privacidad
+
+SUCA es una herramienta de escritorio local y todo su estado vive en su propia maquina:
+
+- `runtime/` guarda conversaciones de chat, indices RAG, galeria de conversiones,
+  ordenes y ajustes. **Esta ignorado por Git y no debe subirse nunca**: puede contener
+  contenido personal del usuario.
+- El repositorio no incluye imagenes de ejemplo con contenido de terceros, credenciales
+  ni certificados. Las rutas de ejemplo de la documentacion y de `legacy/` son genericas.
+- El host escucha en `127.0.0.1` y expone capacidades deliberadamente locales: rutas
+  absolutas de disco, navegacion de carpetas y apertura del Explorador. Revise
+  [SECURITY.md](SECURITY.md) antes de exponerlo en una red.
+- Las credenciales de servicios externos (por ejemplo LM Studio) se configuran por
+  entorno o en `runtime/settings/`, nunca en el codigo.
 
 ## Estructura
 
@@ -20,7 +37,8 @@ src/
   Suca.Integrations.LmStudio/  Cliente, parser y administracion LM Studio
   Suca.Chat/                   Chat persistente con outbox, ACK y reintentos
   Suca.Api/                    Launcher, host REST/MCP y composicion de dependencias
-  Suca.Web/                    Shell SPA: aside de servicios, vistas, tooltips y galeria
+  Suca.Web/                    Shell multipage: aside de servicios, paginas por vista,
+                               tooltips y galeria
 knowledge/seed/                Corpus RAG de ejemplo versionable
 runtime/                       Estado generado local (galeria, ordenes, ajustes,
                                indices y conversaciones); ignorado por Git
@@ -98,3 +116,5 @@ En consola, `--settings` muestra la configuracion efectiva con su origen y `--se
 - [Interfaz web](src/Suca.Web/README.md)
 - [Corpus RAG dinamico](knowledge/seed/README.md)
 - [Estrategia de pruebas](tests/README.md)
+- [Version base historica](legacy/README.md)
+- [Como contribuir](CONTRIBUTING.md) · [Seguridad y privacidad](SECURITY.md) · [Novedades](CHANGELOG.md)

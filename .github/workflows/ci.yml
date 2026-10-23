@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore "ConsoleApp suca compress.csproj"
+
+      - name: Build
+        run: dotnet build "ConsoleApp suca compress.csproj" -c Release --nologo
+
+  hygiene:
+    name: Higiene del repositorio
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Secret scan (trufflehog)
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: .
+          extra_args: --only-verified
+
+      - name: Verificar que no se versionan datos de runtime
+        shell: pwsh
+        run: |
+          $tracked = git ls-files
+          $forbidden = $tracked | Where-Object { $_ -like 'runtime/*' -or $_ -like '.playwright-mcp/*' -or $_ -like 'bin/*' -or $_ -like 'obj/*' -or $_ -like '*.env' -or $_ -like '*.key' -or $_ -like '*.pfx' }
+          if ($forbidden) {
+            Write-Error ("Archivos que no deben versionarse:`n" + ($forbidden -join "`n"))
+            exit 1
+          }
+          Write-Host "OK: $($tracked.Count) archivos versionados, ninguno prohibido."
+
+      - name: Aviso si la documentacion menciona el SPA con router
+        shell: pwsh
+        run: |
+          $stale = Select-String -Path (Get-ChildItem -Recurse -Include *.md -File | Where-Object { $_.FullName -notmatch '\\(bin|obj|legacy|\.git)\\' }) -Pattern 'router por hash|router hash' -ErrorAction SilentlyContinue
+          if ($stale) {
+            Write-Warning "Hay referencias obsoletas al router por hash; el shell ahora es multipage."
+            $stale | ForEach-Object { Write-Warning "  $($_.Path):$($_.LineNumber)" }
+          }

@@ -18,7 +18,7 @@ En particular, `src/Suca.Kernel/SucaCompressionKernel.cs` conserva clases de apo
 | `src/Suca.Integrations.LmStudio` | Cliente REST, parser JSON, embeddings y administracion de modelos LM Studio. | No conoce el host HTTP de SUCA. |
 | `src/Suca.Chat` | Conversaciones, outbox/inbox, ACK, idempotencia, reintentos y dead-letter. | Consume la integracion y RAG mediante contratos. |
 | `src/Suca.Api` | Adaptador REST/MCP, launcher WinForms, DI, ciclo de vida y exposicion de endpoints. | Depende de Application y adaptadores, nunca al reves. |
-| `src/Suca.Web` | Shell SPA estatico (aside de servicios, vistas, tooltips) servido por el host. | No contiene logica de dominio; habla con la API. |
+| `src/Suca.Web` | Shell web estatico multipage (aside de servicios, paginas por servicio, tooltips) servido por el host. | No contiene logica de dominio; habla con la API. |
 
 ## Estructura interna de `Suca.Application`
 
@@ -63,7 +63,7 @@ La aplicacion coordina las operaciones: bloquea por recurso, propaga `Cancellati
 
 ## Frontend (Shell)
 
-`src/Suca.Web/wwwroot` contiene un SPA sin framework: aside de servicios colapsable, router por hash, tootips informativos, toasts y vistas (Compresor, Galeria, Chat, Ajustes, Actividad). Convenciones CSS sin antipatrones (tokens unicos, BEM-lite, sin `!important` ni estilos inline) documentadas en `src/Suca.Web/README.md`.
+`src/Suca.Web/wwwroot` contiene el shell sin framework: aside de servicios colapsable, navegacion multipage (una pagina HTML por servicio), tooltips informativos, toasts y las vistas (Compresor, Galeria, Chat, Ajustes, Actividad) con sus bootstraps aislados. Convenciones CSS sin antipatrones (tokens unicos, BEM-lite, sin `!important` ni estilos inline) documentadas en `src/Suca.Web/README.md`.
 
 ## Siguientes extracciones
 

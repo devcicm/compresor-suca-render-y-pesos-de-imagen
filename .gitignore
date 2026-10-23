@@ -2,6 +2,7 @@
 [Bb]in/
 [Oo]bj/
 .vs/
+.idea/
 *.user
 *.suo
 *.userosscache
@@ -19,6 +20,7 @@ secrets.*.json
 *.key
 *.pfx
 *.p12
+*.keystore
 
 # Runtime data: conversations, indexes, datasets and LLM output may contain user content.
 runtime/
@@ -33,3 +35,17 @@ TestResults/
 coverage/
 *.coverage
 *.coveragexml
+
+# Local databases and browser/session state
+*.db
+*.sqlite
+*.sqlite3
+
+# Tooling artifacts (browser automation captures may include local content)
+.playwright-mcp/
+.mcp/
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini

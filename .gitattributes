@@ -1,2 +1,24 @@
 # Keep text diffs stable across Windows and Unix worktrees.
 * text=auto eol=lf
+
+# Binary assets must never be line-ending or encoding mangled.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.bmp binary
+*.ico binary
+*.zip binary
+*.gz binary
+*.7z binary
+*.pdf binary
+*.dll binary
+*.exe binary
+*.pdb binary
+*.woff binary
+*.woff2 binary
+
+# Generated lock-like files
+packages.lock.json binary
+*.jsonl text eol=lf
