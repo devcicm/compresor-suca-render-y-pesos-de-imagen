@@ -698,11 +698,18 @@ async function revealFile(id, variant) {
     const response = await fetch(`/api/web/images/${id}/reveal?variant=${variant}`, { method: "POST" });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
+      // El servidor devuelve la ruta cuando no puede abrir el Explorador: la
+      // copiamos para que el usuario pueda abrirla a mano.
+      if (body.path) {
+        await copyTextToClipboard(body.path);
+        toast(`No se pudo abrir el Explorador. Ruta copiada al portapapeles: ${body.path}`, "warn", 9000);
+        return;
+      }
       throw new Error(body.error || `HTTP ${response.status}`);
     }
-    toast("Carpeta abierta en el Explorador.", "info");
+    toast("Archivo abierto en el Explorador.", "info");
   } catch (error) {
-    toast(`No se pudo abrir la carpeta: ${error.message}`, "error");
+    toast(`No se pudo abrir el Explorador: ${error.message}`, "error", 8000);
   }
 }
 
@@ -713,9 +720,22 @@ async function revealStorage() {
       const body = await response.json().catch(() => ({}));
       throw new Error(body.error || `HTTP ${response.status}`);
     }
-    toast("Carpeta de imagenes convertidas abierta.", "info");
+    toast("Carpeta de imagenes convertidas abierta en el Explorador.", "info");
   } catch (error) {
-    toast(`No se pudo abrir la carpeta: ${error.message}`, "error");
+    // Sin Explorador disponible: al menos dejamos la ruta a mano.
+    try {
+      const info = await fetchJson("/api/web/images?page=1&pageSize=1");
+      if (info.items && info.items[0]) {
+        const path = await fetchJson(`/api/web/images/${info.items[0].id}/path?variant=converted`);
+        if (path?.path) {
+          await copyTextToClipboard(path.path);
+          toast(`Explorador no disponible. Ruta copiada: ${path.path}`, "warn", 9000);
+          return;
+        }
+      }
+    } catch { /* sin datos: se informa el error original */ }
+
+    toast(`No se pudo abrir la carpeta: ${error.message}`, "error", 8000);
   }
 }
 

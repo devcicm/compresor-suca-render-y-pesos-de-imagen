@@ -10,6 +10,12 @@
     <RootNamespace>ConsoleApp_suca_compress</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <Product>Compresor SUCA</Product>
+    <AssemblyTitle>Compresor SUCA - render y pesos de imagen</AssemblyTitle>
+    <Description>Compresor de imagenes con kernel SUCA: metricas de bpp, ratio e integridad, shell web, ordenes orquestadas y MCP.</Description>
+    <Authors>Carlos Ivan CM</Authors>
+    <Copyright>Copyright (c) 2026 Carlos Ivan CM</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>

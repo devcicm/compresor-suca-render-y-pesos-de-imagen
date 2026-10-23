@@ -1,6 +1,11 @@
-# SUCA
+# Compresor SUCA — render y pesos de imagen
+
+> Compresor de imagenes para Windows: pipeline SUCA (metricas bpp, ratio e integridad) y
+> re-encodado directo, con shell web, ordenes orquestadas para servicios o IAs, y MCP.
 
 SUCA es un compresor de imagenes. El kernel de compresion es el producto principal. OCR visual, embeddings, RAG, LM Studio, chat, REST y MCP son capacidades de apoyo que se conectan mediante la capa de aplicacion.
+
+**Licencia**: [MIT](LICENSE). **Estado**: en desarrollo activo, sin release publicada todavia.
 
 ## Estado del repositorio
 

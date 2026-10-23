@@ -61,10 +61,15 @@ Todavia no hay release publicada: este es el estado actual del codigo de `main`.
 
 ### Seguridad y privacidad
 
+- **Apertura del Explorador corregida**: `explorer.exe` se lanza con ruta absoluta y
+  `UseShellExecute = true`; sin esa opcion el proceso se creaba fuera de la sesion del shell
+  y no aparecia ninguna ventana. Ahora hay cascada (seleccionar archivo, luego carpeta) y,
+  si no hay escritorio interactivo, se informa y se devuelve la ruta para copiarla.
 - Eliminacion de datos de usuario de `runtime/` y reglas para que nunca se versionen.
 - Rutas personales anonimizadas en los comentarios de `legacy/`.
 - Escaneo de secretos e integracion continua (build en Windows) en GitHub Actions.
-- `SECURITY.md` con el modelo de confianza de escritorio local.
+- `SECURITY.md` con el modelo de confianza de escritorio local y la guia de diagnostico
+  del Explorador.
 
 ### Documentacion
 
@@ -72,3 +77,4 @@ Todavia no hay release publicada: este es el estado actual del codigo de `main`.
   variables de arranque.
 - Documentacion de arquitectura, del shell web, del chat y estrategia de pruebas.
 - `README.md`, `CONTRIBUTING.md` y seccion de datos y privacidad.
+- **Licencia MIT** (`LICENSE`) y avisos de terceros (`THIRD-PARTY-NOTICES.md`).

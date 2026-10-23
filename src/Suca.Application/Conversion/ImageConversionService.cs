@@ -1225,16 +1225,78 @@ namespace SUCA_Compressor.Application.Conversion
             return OpenExplorerSelected(root);
         }
 
-        private static Result OpenExplorerSelected(string path)
+        /// <summary>
+        /// Abre el Explorador de Windows. Intentos, en orden:
+        /// 1) explorer.exe /select,"ruta" con shell execute (selecciona el archivo);
+        /// 2) explorer.exe "carpeta" (abre la carpeta aunque no pueda seleccionar);
+        /// 3) fallo con la ruta en el mensaje, para que la UI pueda copiarla.
+        /// En sesiones sin escritorio interactivo (servicio, contenedor, sesion 0) no
+        /// hay nada que abrir: se informa en vez de fingir exito.
+        /// </summary>
+        private Result OpenExplorerSelected(string path, string? variant = null)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return Result.Fail("No hay ruta para abrir.", ConversionErrorCodes.IoError);
+
+            string fullPath = Path.GetFullPath(path);
+            string? explorer = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+
+            if (!File.Exists(explorer))
+                explorer = "explorer.exe";
+
+            // 1) Seleccionar el archivo concreto.
+            Result? selected = TryStartExplorer(explorer, $"/select,\"{fullPath}\"");
+            if (selected is not null)
+            {
+                _observability.RecordSuccess("reveal", $"{variant ?? "archivo"}: {fullPath}", fullPath);
+                return Result.Ok();
+            }
+
+            // 2) Abrir la carpeta contenedora (suele funcionar aunque /select no).
+            string? directory = Directory.Exists(fullPath) ? fullPath : Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
+            {
+                Result? openedFolder = TryStartExplorer(explorer, $"\"{directory}\"");
+                if (openedFolder is not null)
+                {
+                    _observability.RecordSuccess("reveal", $"carpeta (sin seleccionar): {directory}", directory);
+                    return Result.Ok();
+                }
+            }
+
+            _observability.RecordFailure("reveal", new InvalidOperationException("Sin escritorio interactivo"), fullPath);
+            return Result.Fail(
+                $"No se pudo abrir el Explorador en {fullPath}. " +
+                "Comprueba que SUCA se ejecute en una sesion de escritorio con Explorer disponible " +
+                "(no como servicio ni en elevated sin Explorer abierto); mientras tanto puedes copiar la ruta.",
+                ConversionErrorCodes.IoError);
+        }
+
+        /// <summary>
+        /// Arranca explorer.exe. Devuelve null si no se pudo lanzar.
+        /// explorer.exe devuelve siempre codigo 1 aunque abra la ventana, asi que su
+        /// codigo de salida no sirve como senal: solo cuenta que el proceso arranque.
+        /// </summary>
+        private Result? TryStartExplorer(string explorer, string arguments)
         {
             try
             {
-                System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\"");
-                return Result.Ok();
+                var info = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = explorer,
+                    Arguments = arguments,
+                    // El Explorador necesita shell execute: sin esto el proceso se
+                    // lanza en la sesion del servidor y no aparece ninguna ventana.
+                    UseShellExecute = true
+                };
+
+                return System.Diagnostics.Process.Start(info) is not null ? Result.Ok() : null;
             }
             catch (Exception ex)
             {
-                return Result.Fail(ex.Message, ConversionErrorCodes.IoError);
+                _logger.LogWarning("Explorer launch failed ({Explorer} {Args}): {Message}", explorer, arguments, ex.Message);
+                return null;
             }
         }
 

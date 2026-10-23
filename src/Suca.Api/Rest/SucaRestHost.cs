@@ -632,10 +632,22 @@ namespace SUCA_Compressor
 
             app.MapPost("/api/web/images/{id:guid}/reveal", async (Guid id, string? variant, IImageConversionService conversion) =>
             {
-                Result outcome = await conversion.RevealInExplorerAsync(id, variant ?? "converted").ConfigureAwait(false);
-                return outcome.IsSuccess
-                    ? Results.Ok(new { status = "revealed", variant = (variant ?? "converted").ToLowerInvariant() })
-                    : Results.Json(new { error = outcome.Error, errorCode = outcome.ErrorCode }, statusCode: MapErrorCodeToStatus(outcome.ErrorCode));
+                string normalizedVariant = (variant ?? "converted").ToLowerInvariant();
+                Result outcome = await conversion.RevealInExplorerAsync(id, normalizedVariant).ConfigureAwait(false);
+
+                if (outcome.IsSuccess)
+                    return Results.Ok(new { status = "revealed", variant = normalizedVariant });
+
+                // Si no se pudo abrir, la UI necesita la ruta para copiarla a mano.
+                var filePath = await conversion.GetFilePathAsync(id, normalizedVariant).ConfigureAwait(false);
+                return Results.Json(
+                    new
+                    {
+                        error = outcome.Error,
+                        errorCode = outcome.ErrorCode,
+                        path = filePath.IsSuccess ? filePath.Value.Path : null
+                    },
+                    statusCode: MapErrorCodeToStatus(outcome.ErrorCode));
             });
 
             app.MapPost("/api/web/storage/reveal", (IImageConversionService conversion) =>
@@ -643,7 +655,9 @@ namespace SUCA_Compressor
                 Result outcome = conversion.RevealStorageRoot();
                 return outcome.IsSuccess
                     ? Results.Ok(new { status = "revealed" })
-                    : Results.Json(new { error = outcome.Error, errorCode = outcome.ErrorCode }, statusCode: MapErrorCodeToStatus(outcome.ErrorCode));
+                    : Results.Json(
+                        new { error = outcome.Error, errorCode = outcome.ErrorCode },
+                        statusCode: MapErrorCodeToStatus(outcome.ErrorCode));
             });
 
             app.MapGet("/api/web/collections/{name}/paths", async (string name, string? variant, IImageConversionService conversion, CancellationToken ct) =>
