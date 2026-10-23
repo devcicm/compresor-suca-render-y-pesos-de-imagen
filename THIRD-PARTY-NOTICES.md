@@ -20,8 +20,12 @@ anadirse aqui su licencia y origen, y mantenerse el aviso en `CHANGELOG.md`.
 
 | Paquete | Uso | Licencia |
 | --- | --- | --- |
-| `SixLabors.ImageSharp` / `.Drawing` | conversion y procesado de imagenes | Apache-2.0 |
-| `PdfPig` | extraccion de texto de PDF para el indice RAG | Apache-2.0 |
+| `SixLabors.ImageSharp` 2.1.13 | conversion y procesado de imagenes | Apache-2.0 |
+| `PdfPig` 0.1.12 | extraccion de texto de PDF para el indice RAG | Apache-2.0 |
+
+`SixLabors.ImageSharp.Drawing` no se usa y se retiro del proyecto. La serie 3.x de
+ImageSharp no se adopta porque exige licencia comercial de Six Labors; el criterio y los
+avisos de seguridad de la 2.1.13 estan en `SECURITY.md`.
 
 Sus licencias se distribuyen con los propios paquetes en la carpeta `bin/` y en la
 carpeta de paquetes de NuGet del equipo.
