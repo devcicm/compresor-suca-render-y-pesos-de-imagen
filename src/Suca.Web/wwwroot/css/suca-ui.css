@@ -1557,3 +1557,186 @@ body[data-gallery-compact="true"] .gallery-card .g-body .btn-row {
 .toggle[hidden] {
   display: none;
 }
+
+/* --- Ajustes: buscador, cambios sin guardar y validacion --- */
+.settings-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-3);
+}
+
+.settings-toolbar .field-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 260px;
+}
+
+.settings-toolbar input[type="search"] {
+  font: inherit;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  background: var(--color-panel-strong);
+  color: var(--color-ink);
+}
+
+.dirty-bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+}
+
+/* Estado sucio por atributo, no por estilo en linea. */
+label[data-dirty="true"] .field-label {
+  color: var(--color-accent);
+}
+
+label[data-dirty="true"] .field-label::after {
+  content: " \2022";
+  color: var(--color-accent);
+}
+
+label[data-invalid="true"] .field-label {
+  color: var(--color-danger);
+}
+
+label[data-invalid="true"] input,
+label[data-invalid="true"] select {
+  border-color: var(--color-danger);
+}
+
+.field-error {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  color: var(--color-danger);
+}
+
+/* --- Actividad: timeline y detalle de orden --- */
+.activity-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.activity-toolbar .field-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 260px;
+}
+
+.activity-toolbar input[type="search"] {
+  font: inherit;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  background: var(--color-panel-strong);
+  color: var(--color-ink);
+}
+
+.order-id-link {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: 2px 8px;
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.timeline-group {
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  background: var(--color-panel-strong);
+}
+
+.timeline-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  margin-bottom: var(--space-2);
+}
+
+.timeline-track {
+  position: relative;
+  height: 22px;
+  border-radius: 4px;
+  background: var(--color-panel);
+  border: 1px solid var(--color-line);
+}
+
+.timeline-bar {
+  position: absolute;
+  top: 6px;
+  height: 10px;
+  min-width: 3px;
+  border-radius: 3px;
+  background: var(--color-accent);
+}
+
+.timeline-bar[data-level="warning"] { background: var(--color-warn); }
+.timeline-bar[data-level="error"] { background: var(--color-danger); }
+
+.timeline-marker {
+  position: absolute;
+  top: 3px;
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--color-muted);
+  opacity: 0.55;
+}
+
+.timeline-marker[data-level="Error"] { background: var(--color-danger); opacity: 1; }
+.timeline-marker[data-level="Warning"] { background: var(--color-warn); opacity: 0.9; }
+
+.order-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  max-height: 55vh;
+  overflow: auto;
+}
+
+.order-item {
+  border: 1px solid var(--color-line);
+  border-left: 3px solid var(--color-muted);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  background: var(--color-panel-strong);
+}
+
+.order-item[data-state="completed"] { border-left-color: var(--color-ok); }
+.order-item[data-state="failed"] { border-left-color: var(--color-danger); }
+.order-item[data-state="cancelled"] { border-left-color: var(--color-warn); }
+.order-item[data-state="running"] { border-left-color: var(--color-accent); }
+
+.order-item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}

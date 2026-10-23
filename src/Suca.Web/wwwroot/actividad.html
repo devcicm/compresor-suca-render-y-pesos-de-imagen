@@ -28,22 +28,46 @@
         <button id="refresh-activity-button" type="button" class="btn">Actualizar</button>
       </div>
       <div id="orders-list" class="orders-list"></div>
+      <p class="muted-note">Pulsa el identificador de una orden para ver sus items, su historial de estados y descargar su JSON.</p>
     </div>
 
     <div class="card">
       <h2>Eventos recientes (trazabilidad)</h2>
-      <label class="field field-inline">
-        <span class="field-label">Filtrar</span>
-        <input id="activity-filter" type="search" placeholder="correlationId, nombre de evento...">
-      </label>
+      <div class="btn-row activity-toolbar">
+        <label class="field field-inline">
+          <span class="field-label">Filtrar</span>
+          <input id="activity-filter" type="search" placeholder="correlationId, nombre de evento...">
+        </label>
+        <div class="view-toggles" role="group" aria-label="Vista de eventos">
+          <button id="events-table-view" type="button" class="btn" data-active="true" aria-pressed="true">Tabla</button>
+          <button id="events-timeline-view" type="button" class="btn" aria-pressed="false">Timeline
+            <span class="tip-dot" data-tip-title="Timeline" data-tip="Agrupa los eventos por correlacion y dibuja cada trabajo como una barra: inicio, duracion y estado. Ideal para ver donde se fue el tiempo de una orden." data-tip-pos="top" tabindex="0" role="note">?</span>
+          </button>
+        </div>
+      </div>
       <div class="table-wrap">
         <table class="activity-table">
           <thead><tr><th>Hora</th><th>Nivel</th><th>Evento</th><th>Mensaje</th><th>Correlacion</th></tr></thead>
           <tbody id="activity-rows"></tbody>
         </table>
       </div>
+      <div id="activity-timeline" class="timeline" hidden></div>
     </div>
   </main>
+
+  <div id="order-detail-overlay" class="overlay" hidden>
+    <div class="card detail-card">
+      <header class="card-head">
+        <h3 id="order-detail-title">Detalle de la orden</h3>
+        <div class="btn-row">
+          <a id="order-detail-download" class="btn" download>Descargar JSON</a>
+          <button id="order-detail-close" type="button" class="btn">Cerrar</button>
+        </div>
+      </header>
+      <div id="order-detail-meta" class="chip-row"></div>
+      <div id="order-detail-items" class="order-items"></div>
+    </div>
+  </div>
 
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 

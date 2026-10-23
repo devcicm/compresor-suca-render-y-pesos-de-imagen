@@ -109,6 +109,30 @@
       </div>
     </div>
 
+    <div class="card settings-toolbar">
+      <label class="field field-inline">
+        <span class="field-label">Buscar ajuste
+          <span class="tip-dot" data-tip-title="Buscar" data-tip="Filtra los campos por nombre o clave (por ejemplo 'quality' o 'web.'). No cambia nada, solo oculta lo que no coincide." tabindex="0" role="note">?</span>
+        </span>
+        <input id="settings-filter" type="search" placeholder="quality, web., lmstudio...">
+      </label>
+      <div class="btn-row">
+        <button id="export-settings-button" type="button" class="btn">Exportar JSON
+          <span class="tip-dot" data-tip-title="Exportar" data-tip="Descarga los valores efectivos actuales (sistema + usuario) como archivo JSON para respaldarlos o compartirlos." data-tip-pos="top" tabindex="0" role="note">?</span>
+        </button>
+        <button id="import-settings-button" type="button" class="btn">Importar JSON
+          <span class="tip-dot" data-tip-title="Importar" data-tip="Carga un JSON exportado previamente y lo guarda en el scope usuario. Revisa antes de confirmar." data-tip-pos="top" tabindex="0" role="note">?</span>
+        </button>
+        <input id="import-settings-file" type="file" accept="application/json,.json" hidden>
+      </div>
+    </div>
+
+    <div id="dirty-bar" class="dirty-bar" hidden>
+      <span id="dirty-summary" class="chip" data-kind="accent">0 campos modificados</span>
+      <button id="dirty-save-button" type="button" class="btn btn-primary">Guardar (usuario)</button>
+      <button id="dirty-discard-button" type="button" class="btn">Descartar cambios</button>
+    </div>
+
     <div class="card">
       <div class="btn-row settings-actions">
         <button id="save-user-settings" type="button" class="btn btn-primary">Guardar como usuario

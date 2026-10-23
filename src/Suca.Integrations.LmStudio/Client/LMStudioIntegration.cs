@@ -968,20 +968,26 @@ namespace SUCA_Compressor
 
     internal static class JsonDefaults
     {
-        public static JsonSerializerOptions Default { get; } = new(JsonSerializerDefaults.Web)
+        // Los enums se escriben como texto ("Completed", no 6): la API la consumen
+        // servicios e IAs, y un numero no es explicito. Los archivos JSON ya
+        // escritos siguen leyendose porque la conversion acepta ambos formatos.
+        private static JsonSerializerOptions Build(bool indented, bool loose)
         {
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-        };
+            var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+            {
+                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+                WriteIndented = indented,
+                PropertyNameCaseInsensitive = loose,
+                Converters = { new JsonStringEnumConverter() }
+            };
 
-        public static JsonSerializerOptions Indented { get; } = new(JsonSerializerDefaults.Web)
-        {
-            WriteIndented = true,
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-        };
+            return options;
+        }
 
-        public static JsonSerializerOptions Loose { get; } = new(JsonSerializerDefaults.Web)
-        {
-            PropertyNameCaseInsensitive = true
-        };
+        public static JsonSerializerOptions Default { get; } = Build(indented: false, loose: false);
+
+        public static JsonSerializerOptions Indented { get; } = Build(indented: true, loose: false);
+
+        public static JsonSerializerOptions Loose { get; } = Build(indented: false, loose: true);
     }
 }

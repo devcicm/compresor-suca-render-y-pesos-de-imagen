@@ -77,6 +77,32 @@ js/main.js       Estado global, ajustes, toasts, sondeo de /health y utilidades
   navegables usan `data-nav-item` y flechas; el progreso se anuncia con una region viva
   (`.visually-hidden`, `role="status"`).
 
+## Ajustes: buscador, cambios sin guardar e import/export
+
+- **Buscador** por nombre visible o clave (`quality`, `web.`, `lmstudio`...): oculta lo que no
+  coincide e informa cuantos hay.
+- **Barra de cambios sin guardar**: fija arriba con el numero de campos tocados, **Guardar
+  (usuario)** y **Descartar cambios**. El estado sucio se marca por atributo
+  (`label[data-dirty]`), nunca con estilos en linea.
+- **Validacion en linea**: numeros contra `min`/`max` declarados en el HTML y URLs con
+  esquema; marca `aria-invalid` y muestra el motivo. **El guardado se bloquea** si algun
+  campo modificado es invalido, indicando cual.
+- **Exportar / importar JSON**: descarga los valores efectivos (con su origen) y permite
+  cargarlos de vuelta en el scope `usuario` con confirmacion previa.
+- Correccion: `fetchJson` se importaba sin estar en la lista de imports, por lo que guardar
+  o restablecer ajustes fallaba al recargar del servidor.
+
+## Actividad: timeline y detalle de orden
+
+- **Timeline por correlacion**: agrupa los eventos por correlacion base (ignorando el sufijo
+  `.itemId8` de los items) y dibuja cada trabajo como una barra con su duracion y marcadores
+  por evento; el color indica info, warning o error. Alternancia **Tabla | Timeline**
+  persistida en `suca.activity.view`.
+- **Detalle de orden**: el identificador de cada orden abre un dialogo con sus items, su
+  `stateHistory` (`Pending · 0 ms -> Running · 0 ms -> Completed · 448 ms`), duracion,
+  `recordId` de galeria y descarga del JSON de la orden. El estado global se deriva de los
+  items porque el endpoint de detalle no lo incluye.
+
 ## Chat: banner de servicio, streaming y Markdown
 
 - **Banner de LM Studio**: consulta `GET /api/lmstudio/health` al abrir la pagina y muestra

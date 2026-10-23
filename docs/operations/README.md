@@ -103,7 +103,10 @@ Una coleccion es una categoria (ej.: `facturas`, `lote-shell`). Se asigna al sub
 - `POST /api/web/collections` (body `{"name":"lote-x"}`): crea una coleccion vacia. `201` si se creo; `409` `collection-exists` si ya existe; `400` `invalid-collection` si el nombre es invalido o es `general` (reservada).
 - `PUT /api/web/collections/{name}` (body `{"newName":"nuevo"}`): renombra y actualiza todas sus imagenes y el registro; mismos errores (`collection-exists`, `collection-not-found`, `invalid-collection` para `general` o nombre vacio).
 - `GET /api/web/collections/{name}/images`: JSON enriquecido con grupos `input` (formato, dimensiones, bytes, MPx, EXIF), `output` (formato, calidad, bpp, ratio, alpha, duracion), `metrics`, `links`, y **base64/dataUrl** de la imagen convertida. Parametros: `includeBase64` (default `true`), `originalBase64` (default `false`), `page`, `pageSize`.
-- `GET /api/web/images?collection={name}`: listado filtrado. Acepta `page` y `pageSize` (1-200; si se omiten devuelve todo para no romper clientes existentes) e incluye `total`, `page`, `pageSize` e `items`.
+- **JSON legible por defecto**: los enums se serializan como texto (`"state": "Completed"`,
+  no `6`) tanto en la API HTTP como en la salida de MCP, para que un servicio o una IA
+  entienda el estado sin tabla de equivalencias. Los archivos ya escritos siguen leyendose.
+- `GET /api/web/images` acepta `page` y `pageSize` (1-200; si se omiten devuelve todo para no romper clientes existentes) e incluye `total`, `page`, `pageSize` e `items`.
 - `PUT /api/web/images/{id}/collection` (body `{"collection":"nombre"}`): reasignar (registra la coleccion si era nueva).
 - `DELETE /api/web/collections/{name}?confirm=true`: disuelve la coleccion; las imagenes pasan a `general` (no borra archivos).
 

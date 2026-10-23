@@ -31,6 +31,14 @@ namespace SUCA_Compressor
         public static async Task RunAsync(string[] args, CancellationToken cancellationToken = default)
         {
             var builder = WebApplication.CreateBuilder(args);
+
+            // Los enums viajan como texto en la API ("Completed", no 6): la consumen
+            // servicios e IAs y un numero no es explicito al leer el JSON.
+            builder.Services.ConfigureHttpJsonOptions(options =>
+            {
+                options.SerializerOptions.Converters.Add(
+                    new System.Text.Json.Serialization.JsonStringEnumConverter());
+            });
             string? explicitUrls = TryReadOption(args, "--urls")
                 ?? Environment.GetEnvironmentVariable("SUCA_URLS");
             string minichatUiPath = SucaRuntimePaths.ResolveWebUiRoot();
