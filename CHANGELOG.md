@@ -15,7 +15,8 @@ Todavia no hay release publicada: este es el estado actual del codigo de `main`.
   `optimizando`, `verificando`, `registrando`) y `GET /api/web/convert/progress?correlationId=...`
   devuelve `percent`, `phase`, `detail`, `elapsedMs`, `sinceUpdateMs` y `heartbeatMs`
   (latido cada segundo mientras el request vive). La cola muestra `57% · codificando ·
-  3.2 s · vivo` y marca `sin senal` si el latido supera 3 s.
+  3.2 s · vivo` y marca `sin senal` si el latido supera 3 s. El agregado de la cola suma
+  el avance en vuelo (antes marcaba 100% en cuanto empezaba la primera conversion).
 - **Cortes de seguridad**: el cliente aborta a `web.convertTimeoutSeconds + 20 s`; una
   subida sin bytes durante 30 s se cancela con un mensaje claro; el servidor ya cancelaba
   a `web.convertTimeoutSeconds` (180 s por defecto).

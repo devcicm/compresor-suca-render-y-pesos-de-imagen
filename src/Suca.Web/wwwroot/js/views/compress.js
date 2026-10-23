@@ -608,7 +608,15 @@ function renderQueue() {
   const pending = pendingCount();
   const total = queue.length;
   const done = queue.filter((x) => x.state === "done").length;
-  const aggregate = total === 0 ? 0 : Math.round(((done + (total - pending - done)) / total) * 100);
+
+  // El agregado refleja el avance real: completadas + fraccion en vuelo,
+  // no "todo lo que no esta pendiente" (que marcaba 100% al empezar).
+  const inFlight = queue.filter((x) => x.state === "uploading" || x.state === "processing");
+  const partial = inFlight.reduce(
+    (sum, x) => sum + Math.min(100, Math.max(0, Number(x.percent) || 0)) / 100,
+    0
+  );
+  const aggregate = total === 0 ? 0 : Math.min(100, Math.round(((done + partial) / total) * 100));
 
   el("convert-button").disabled = converting || pending === 0;
   el("aggregate-fill").style.width = `${aggregate}%`;
