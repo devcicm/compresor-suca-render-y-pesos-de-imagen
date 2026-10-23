@@ -122,7 +122,7 @@ namespace SUCA_Compressor
                     var ex = feature?.Error;
 
                     // Cuerpo demasiado grande: 413 limpio en vez de 500 con stack.
-                    if (ex is Microsoft.AspNetCore.Server.Kestrel.Core.BadHttpRequestException bad
+                    if (ex is Microsoft.AspNetCore.Http.BadHttpRequestException bad
                         && bad.Message.Contains("Request body too large", StringComparison.OrdinalIgnoreCase))
                     {
                         context.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
