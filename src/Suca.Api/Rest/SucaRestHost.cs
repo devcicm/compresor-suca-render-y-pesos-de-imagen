@@ -519,6 +519,22 @@ namespace SUCA_Compressor
                     command.Profile = new SucaProfile { A = pa.Value, B = pb.Value, C = pc.Value, D = pd.Value };
                 }
 
+                // Peso objetivo (peso mosca) y modo sin perdida: opciones del kernel.
+                double? targetKb = FormDouble(form, "pesoMoscaKbTarget");
+                if (targetKb.HasValue && (targetKb.Value < 1 || targetKb.Value > 20000))
+                    return Results.BadRequest(new { error = "pesoMoscaKbTarget debe estar entre 1 y 20000 KB.", errorCode = ConversionErrorCodes.InvalidFormat });
+
+                bool? allowLossy = FormBoolNullable(form, "allowLossy");
+                if (targetKb.HasValue || allowLossy.HasValue)
+                {
+                    command.Options = new SucaOptions
+                    {
+                        EnablePesoMosca = targetKb.HasValue || allowLossy is null,
+                        PesoMoscaKbTarget = targetKb ?? 100.0,
+                        AllowLossy = allowLossy ?? true
+                    };
+                }
+
                 int timeoutSeconds = Math.Max(5, effective.Web.ConvertTimeoutSeconds ?? 180);
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(LinkToken(http, ct));
                 timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
@@ -1201,6 +1217,24 @@ namespace SUCA_Compressor
             return int.TryParse(value, out int parsed) ? parsed : null;
         }
 
+        private static double? FormDouble(IFormCollection form, string key)
+        {
+            string value = form[key].ToString();
+            return double.TryParse(value, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out double parsed)
+                ? parsed
+                : null;
+        }
+
+        private static bool? FormBoolNullable(IFormCollection form, string key)
+        {
+            string value = form[key].ToString();
+            if (string.IsNullOrWhiteSpace(value))
+                return null;
+
+            return value is "true" or "1" or "yes" or "on";
+        }
+
         private static bool FormBool(IFormCollection form, string key, bool fallback)
         {
             string value = form[key].ToString();
@@ -1318,6 +1352,26 @@ namespace SUCA_Compressor
 
             var settings = services.GetRequiredService<ISucaSettingsService>();
             var effective = settings.GetEffective();
+
+            // Peso objetivo y modo sin perdida (opciones del kernel SUCA).
+            if (payload.TryGetProperty("pesoMoscaKbTarget", out JsonElement targetElement)
+                && targetElement.ValueKind == JsonValueKind.Number)
+            {
+                double target = targetElement.GetDouble();
+                if (target < 1 || target > 20000)
+                    return Results.BadRequest(new { error = "pesoMoscaKbTarget debe estar entre 1 y 20000 KB." });
+
+                command.Options ??= new SucaOptions();
+                command.Options.PesoMoscaKbTarget = target;
+                command.Options.EnablePesoMosca = true;
+            }
+
+            if (payload.TryGetProperty("allowLossy", out JsonElement lossyElement)
+                && lossyElement.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                command.Options ??= new SucaOptions();
+                command.Options.AllowLossy = lossyElement.GetBoolean();
+            }
             // Apply user defaults for any value the payload omitted.
             if (!payload.TryGetProperty("engine", out _))
                 command.Engine = effective.Conversion.Engine ?? command.Engine;

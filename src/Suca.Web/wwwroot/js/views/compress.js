@@ -474,6 +474,7 @@ function renderQueue() {
           <span class="chip">${r.outputCompressionRatio}:1</span>
           <span class="chip">${r.durationMs} ms</span>
           <span class="chip">${escapeHtml(r.collection)}</span>
+          ${integrityChips(r)}
         </div>
         <div class="q-meta q-links">
           <a href="/api/web/images/${r.id}/file?variant=converted" download>Descargar</a> ·
@@ -767,6 +768,14 @@ function buildForm(item, correlation) {
     form.append("profileD", profile.d);
   }
 
+  // Peso objetivo (peso mosca) y modo sin perdida.
+  const target = el("peso-objetivo")?.value?.trim();
+  if (target) form.append("pesoMoscaKbTarget", target);
+
+  if (el("engine").value === "suca") {
+    form.append("allowLossy", el("allow-lossy").checked ? "true" : "false");
+  }
+
   const collection = ov.collection ?? el("collection").value.trim();
   if (collection) form.append("collection", collection);
 
@@ -950,6 +959,22 @@ async function validateOrder() {
     statusEl.textContent = "";
     toast(`Carpeta invalida: ${error.message}`, "error");
   }
+}
+
+/* Chips del reporte de integridad perceptual (solo motor SUCA). */
+function integrityChips(record) {
+  if (!record || record.integritySsim === null || record.integritySsim === undefined) return "";
+
+  if (record.integrityBitwiseEqual) {
+    return '<span class="chip" data-kind="ok" title="SHA-256 identico: sin cambios en los pixeles">sin perdida (bit a bit)</span>';
+  }
+
+  const kind = record.integrityVerdict === "ACEPTABLE ESTRUCTURALMENTE" ? "ok" : "warn";
+  const psnr = record.integrityPsnr !== null && record.integrityPsnr !== undefined
+    ? `${Number(record.integrityPsnr).toFixed(1)} dB`
+    : "-";
+
+  return `<span class="chip" data-kind="${kind}" title="${escapeHtml(record.integrityVerdict ?? "")} · bordes ${record.integrityEdgeRetention} · histograma ${record.integrityHistogram}">SSIM ${Number(record.integritySsim).toFixed(3)} · PSNR ${psnr}</span>`;
 }
 
 /* ============================== Carpetas y portapapeles ============================== */

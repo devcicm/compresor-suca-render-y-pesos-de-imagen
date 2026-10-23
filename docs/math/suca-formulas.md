@@ -219,7 +219,82 @@ qBase  = 60 + 0.4207·39 = 76
 delta(500 KB) = 0  →  calidad = 76
 ```
 
-Si el clasificador detecta `Photo`, la calidad queda en 76 (`q ≤ 90`); si detecta
-`Document`, sube a `max(76, 78) = 78` y la escala a `max(0.4008, 0.72) = 0.72`
-(`2880 x 2160`). El resultado final se mide con bpp, ratio y ahorro (seccion 8) y, si
-`GenerateIntegrityReport` esta activo, se emite el reporte de la seccion 9.
+## 12. ¿"80 KB sin perdida"? Que es verdad y que no
+
+La frase correcta no es *"80 KB sin perdida"*, sino **"80 KB con perdida medida y acotada"**.
+El kernel nunca afirma que no haya perdida: la mide y la publica.
+
+### Cuando SI hay perdida (y es inevitable)
+
+| Fuente de perdida | Por que | Donde esta en el codigo |
+| --- | --- | --- |
+| **Resize** | Cada pixel de salida mezcla varios de entrada (Mitchell-Netravali). Aunque el codigo sea sin perdida, ya no son los pixeles originales. | `SucaCompressor.Process` → `Resize` |
+| **Cuantizacion del codec** | WebP/JPEG lossy descartan informacion de alta frecuencia. | `SaveByDecision` |
+| **Near-lossless WebP** | `NearLossless=true` reduce la precision espacial: es *casi* sin perdida, no sin perdida. | Documento/UI/Huella |
+| **Peso mosca** | Baja calidad de 5 en 5 y, si hace falta, reduce dimensiones ×0.94 hasta clavar el objetivo. | `SaveWithOptionalPesoMosca` |
+
+Consecuencia: **alcanzar 80 KB desde un archivo mayor siempre implica perdida**. Lo unico
+sin perdida real es `AllowLossy = false` (PNG) **y** sin resize **y** sin quitar metadatos:
+ahi el SHA-256 coincide y el reporte dice `sin perdida (bit a bit)`.
+
+### Cuando 80 KB se ve "sin perdida" (percepcion)
+
+- **El contenido decide**: un documento, una captura de UI o una huella toleran WebP
+  near-lossless con calidad 70-88 y el ojo no distingue; una foto con textura fina a 80 KB
+  si muestra perdida.
+- **La calidad no se elige al azar**: el perfil A-D y el hash fijan la calidad, el tipo de
+  contenido impone suelos (Documento q≥78, UI q≥82, Huella q≥88) y las fotos aceptan mas
+  compresion (q≤90).
+- **El ahorro no sale solo de tirar pixeles**: sale de quitar metadatos (EXIF/ICC),
+  reducir dimensiones y usar un codec moderno. En el ejemplo del degradado, 77 MB → 4 KB
+  (-99.99%) porque el contenido es trivialmente compresible.
+
+### La prueba objetiva que ahora se guarda
+
+Desde esta version el registro incluye el reporte de integridad:
+
+```
+integritySsim            similitud estructural global (1.0 = identicas)
+integrityPsnr            PSNR en dB (mas alto = menos error)
+integrityEdgeRetention   bordes conservados (1.0 = todos)
+integrityHistogram       similitud de histograma
+integrityMode            "perceptual" o "lossless-strong"
+integrityVerdict         ACEPTABLE ESTRUCTURALMENTE / RIESGO DE PERDIDA RELEVANTE
+integrityBitwiseEqual    true solo si los SHA-256 coinciden
+```
+
+Criterio de aceptacion del kernel: `SSIM ≥ 0.88 ∧ bordes ≥ 0.80 ∧ histograma ≥ 0.84`.
+Eso es lo que la UI muestra como chip `SSIM 0.96 · PSNR 41.2 dB` o `sin perdida (bit a bit)`.
+Es una afirmacion **medible**, no una promesa de marketing.
+
+### Medicion real del caso "80 KB"
+
+Foto sintetica de prueba (900x700, 1846 KB), dos estrategias con el mismo objetivo de 80 KB:
+
+| Estrategia | Salida | Dimensiones | SSIM | PSNR | Bordes | Veredicto |
+| --- | --- | --- | --- | --- | --- | --- |
+| WebP con perdida (perfil 0-1-1-3) | 7.2 KB | 522x406 | 0.9987 | 36.9 dB | **0.157** | RIESGO DE PERDIDA RELEVANTE |
+| PNG sin perdida (codec) + objetivo | 70.4 KB | **407x317** | 0.9996 | — | — | RIESGO DE PERDIDA RELEVANTE |
+
+Lectura honesta de la tabla:
+
+1. **El objetivo de peso es un techo, no una meta**: el caso WebP salio en 7 KB porque la
+   escala factorizada y la calidad derivada del hash ya estaban muy por debajo de 80 KB.
+2. **PNG "sin perdida" tampoco salva los pixeles**: para caber en 80 KB el kernel tuvo que
+   reducir 900x700 a 407x317. El codec es sin perdida, pero los pixeles ya no son los
+   originales (`integrityBitwiseEqual = false`).
+3. **La unica salida identica bit a bit** exige: codec sin perdida, cero resize y cero
+   metadatos. Con un original de 1.8 MB de detalle, 80 KB no puede contener la misma
+   informacion: la relacion de compresion es de 23:1.
+
+Por eso SUCA no promete "80 KB sin perdida": elige la ruta que menos dano hace segun el
+contenido (near-lossless para documento/UI/huella, perdida controlada para foto) y **mide**
+el resultado para que la decision sea auditable.
+
+### Mejora posible: maximizar calidad dentro del techo
+
+Hoy el peso mosca **solo desciende** (nunca sube calidad para aprovechar el margen). Si se
+quisiera "la mejor calidad posible que quepa en 80 KB", habria que anadir una busqueda
+ascendente (+5 de calidad mientras el peso siga bajo el techo). No esta implementado porque
+rompe la determinacion por hash/perfil que documenta la seccion 3; queda como decision de
+diseno pendiente.

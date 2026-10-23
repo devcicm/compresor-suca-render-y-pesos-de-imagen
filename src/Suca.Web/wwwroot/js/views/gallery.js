@@ -209,6 +209,11 @@ function renderGrid(items) {
           <span class="chip" data-kind="accent">${escapeHtml(String(record.format).toUpperCase())}</span>
           <span class="chip" data-kind="ok">-${Math.abs(record.savingPercent).toFixed(1)}%</span>
           <span class="chip">${escapeHtml(record.collection)}</span>
+          ${record.integritySsim === null || record.integritySsim === undefined
+            ? ""
+            : record.integrityBitwiseEqual
+              ? '<span class="chip" data-kind="ok" title="Sin perdida: SHA-256 identico">sin perdida</span>'
+              : `<span class="chip" data-kind="${record.integrityVerdict === "ACEPTABLE ESTRUCTURALMENTE" ? "ok" : "warn"}" title="${escapeHtml(record.integrityVerdict ?? "")}">SSIM ${Number(record.integritySsim).toFixed(2)}</span>`}
         </div>
         <div class="g-meta">${formatBytes(record.originalBytes)} &rarr; ${formatBytes(record.convertedBytes)} \u00b7 ${escapeHtml(new Date(record.createdAtUtc).toLocaleString())}</div>
         <div class="btn-row">
@@ -629,6 +634,25 @@ async function openDetail(id) {
     ${record.sucaHash ? `<span class="chip">sucaHash: ${record.sucaHash}</span>` : ""}
     ${record.correlationId ? `<span class="chip cell-mono">corr: ${escapeHtml(record.correlationId)}</span>` : ""}
     <span class="chip">${escapeHtml(new Date(record.createdAtUtc).toLocaleString())}</span>`;
+
+  // Integridad perceptual: la prueba medible de "cuanta calidad se conservo".
+  const integrity = el("detail-integrity-chips");
+  if (integrity) {
+    if (record.integritySsim === null || record.integritySsim === undefined) {
+      integrity.innerHTML = '<span class="chip">sin reporte (motor directo)</span>';
+    } else if (record.integrityBitwiseEqual) {
+      integrity.innerHTML = '<span class="chip" data-kind="ok">sin perdida: SHA-256 identico</span>';
+    } else {
+      const ok = record.integrityVerdict === "ACEPTABLE ESTRUCTURALMENTE";
+      integrity.innerHTML = `
+        <span class="chip" data-kind="${ok ? "ok" : "warn"}">${escapeHtml(record.integrityVerdict ?? "")}</span>
+        <span class="chip">SSIM ${Number(record.integritySsim).toFixed(3)}</span>
+        <span class="chip">PSNR ${Number(record.integrityPsnr ?? 0).toFixed(1)} dB</span>
+        <span class="chip">bordes ${Number(record.integrityEdgeRetention ?? 0).toFixed(2)}</span>
+        <span class="chip">histograma ${Number(record.integrityHistogram ?? 0).toFixed(2)}</span>
+        <span class="chip">${escapeHtml(record.integrityMode ?? "")}</span>`;
+    }
+  }
 
   el("detail-download").href = `/api/web/images/${id}/file?variant=converted`;
   el("detail-download-original").href = `/api/web/images/${id}/file?variant=original`;

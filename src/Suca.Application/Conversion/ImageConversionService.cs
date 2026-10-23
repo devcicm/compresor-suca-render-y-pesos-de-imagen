@@ -71,6 +71,17 @@ namespace SUCA_Compressor.Application.Conversion
         public long DurationMs { get; set; }
         public double SavingPercent { get; set; }
         public int? SucaHash { get; set; }
+
+        // Reporte de integridad perceptual (solo motor SUCA). Nulos = no generado
+        // (motor directo) o registro antiguo.
+        public double? IntegrityPsnr { get; set; }
+        public double? IntegritySsim { get; set; }
+        public double? IntegrityEdgeRetention { get; set; }
+        public double? IntegrityHistogram { get; set; }
+        public string? IntegrityMode { get; set; }
+        public string? IntegrityVerdict { get; set; }
+        public bool IntegrityBitwiseEqual { get; set; }
+
         public string OriginalFile { get; set; } = "";
         public string ConvertedFile { get; set; } = "";
         public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
@@ -1128,6 +1139,20 @@ namespace SUCA_Compressor.Application.Conversion
             record.ConvertedHeight = info?.Height ?? result.Decision.NewHeight;
             record.SavingPercent = result.SavingPercent;
             record.SucaHash = result.Decision.Hash;
+
+            // El kernel genera el reporte de integridad perceptual (SSIM, PSNR,
+            // retencion de bordes). Deja de ser un dato interno: viaja con el registro.
+            if (result.Integrity is { } integrity)
+            {
+                record.IntegrityPsnr = Math.Round(integrity.Psnr, 2);
+                record.IntegritySsim = Math.Round(integrity.SsimLite, 4);
+                record.IntegrityEdgeRetention = Math.Round(integrity.EdgeRetention, 4);
+                record.IntegrityHistogram = Math.Round(integrity.HistogramSimilarity, 4);
+                record.IntegrityMode = integrity.Mode;
+                record.IntegrityVerdict = integrity.Verdict;
+                record.IntegrityBitwiseEqual = integrity.BitwiseEqual;
+            }
+
             FillOutputMetrics(record, convertedBytes, record.ConvertedWidth, record.ConvertedHeight, format);
 
             string extension = Path.GetExtension(result.OutputPath);

@@ -56,6 +56,18 @@
           </span>
         </label>
         <label class="field">
+          <span class="field-label">Peso objetivo (KB)
+            <span class="tip-dot" data-tip-title="Peso objetivo" data-tip="Peso mosca: si la salida supera este tamano, el kernel baja calidad de 5 en 5 y, si no basta, reduce dimensiones x0.94 hasta acercarse. Vacio = 100 KB por defecto. La perdida queda medida en el reporte de integridad (SSIM/PSNR)." tabindex="0" role="note">?</span>
+          </span>
+          <input id="peso-objetivo" type="number" min="1" max="20000" step="5" placeholder="100">
+        </label>
+        <label class="field">
+          <span class="field-label">Sin perdida (PNG)
+            <span class="tip-dot" data-tip-title="Sin perdida" data-tip="Fuerza PNG sin cuantizacion: los pixeles de salida son exactos. El tamano sube mucho y, si hay peso objetivo, el unico ajuste posible sera reducir dimensiones (lo que si cambia los pixeles). Solo motor SUCA." tabindex="0" role="note">?</span>
+          </span>
+          <label class="toggle"><input id="allow-lossy" type="checkbox" checked><span>Permitir compresion con perdida</span></label>
+        </label>
+        <label class="field">
           <span class="field-label">Motor
             <span class="tip-dot" data-tip-title="Motor" data-tip="SUCA: pipeline completo con perfil A-D, peso mosca y reporte de integridad (primera opcion). Directo: re-encodado con ImageSharp, mas rapido y predecible." tabindex="0" role="note">?</span>
           </span>
