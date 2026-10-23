@@ -1,0 +1,35 @@
+# Build output and IDE state
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+appsettings.Local.json
+appsettings.Development.local.json
+secrets.json
+secrets.*.json
+*.pem
+*.key
+*.pfx
+*.p12
+
+# Runtime data: conversations, indexes, datasets and LLM output may contain user content.
+runtime/
+
+# Generated RAG indexes and transient atomic-write files.
+*.tmp
+*.tmp.*
+
+# Logs and test output
+*.log
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
