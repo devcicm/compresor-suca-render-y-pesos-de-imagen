@@ -76,6 +76,29 @@ jobs:
           }
           Write-Host "OK: $($tracked.Count) archivos versionados, ninguno prohibido."
 
+      - name: Selector de archivos local (label nativo)
+        shell: pwsh
+        run: |
+          # El selector de archivos se rompio varias veces al tocar el shell: se
+          # fija el contrato minimo para que la activacion sea nativa y no dependa
+          # de JS. Ver src/Suca.Web/README.md.
+          $html = Get-Content "src/Suca.Web/wwwroot/index.html" -Raw
+          $errors = @()
+          if ($html -notmatch '<label[^>]*id="dropzone"[^>]*for="file-input"') {
+            $errors += 'El dropzone debe ser <label ... for="file-input">.'
+          }
+          if ($html -notmatch '<input[^>]*id="file-input"[^>]*type="file"') {
+            $errors += 'Falta <input id="file-input" type="file">.'
+          }
+          if ($html -match 'id="file-input"[^>]*\shidden(\s|>)') {
+            $errors += '#file-input no debe usar el atributo hidden; use class="visually-hidden".'
+          }
+          if ($errors) {
+            $errors | ForEach-Object { Write-Error $_ }
+            exit 1
+          }
+          Write-Host "OK: el dropzone activa el selector de archivos de forma nativa."
+
       - name: Aviso si la documentacion menciona el SPA con router
         shell: pwsh
         run: |

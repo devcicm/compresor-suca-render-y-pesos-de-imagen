@@ -55,7 +55,7 @@ El modo web sirve el shell SUCA Studio en `http://127.0.0.1:5077/studio`; `/mini
 
 La interfaz `/studio` es un conjunto de paginas minimalistas con un aside lateral colapsable (riel de iconos; estado persistido) y cinco servicios navegables como paginas reales:
 
-- **Compresor SUCA** (`/studio/`, vista inicial): seleccion con ventana del navegador o arrastrar y soltar (multiples archivos), cola con **conversion en paralelo** y **barras de progreso por archivo** (subida 0-60%, procesando 60-95%, listo 100%), barra agregada, pausa/cancelacion/reanudacion por archivo y global, chips de metricas de entrada/salida y tarjeta avanzada para enviar **ordenes orquestadas** sobre carpetas del servidor. El motor por defecto es **Pipeline SUCA** (configurable a Directo).
+- **Compresor SUCA** (`/studio/`, vista inicial): seleccion con la ventana del navegador (dropzone `<label>` nativo) o arrastrar y soltar (multiples archivos y carpetas), cola con **conversion en paralelo** y **progreso real por archivo** (subida 0-55% por bytes, luego etapa y porcentaje del servidor con heartbeat), barra agregada, pausa/cancelacion/reanudacion por archivo y global, chips de metricas de entrada/salida y tarjeta avanzada para enviar **ordenes orquestadas** sobre carpetas del servidor. El motor por defecto es **Pipeline SUCA** (configurable a Directo).
 - **Explorador de carpetas del servidor y validacion** (pantalla Compresor, tarjeta avanzada): boton **Explorar...** abre un dialogo que navega el sistema de archivos donde corre SUCA (unidades y subcarpetas con conteo de imagenes por carpeta; endpoint `GET /api/web/folders`), y el boton **Validar** envia `POST /api/web/orders/preview` que comprueba la ruta **antes de convertir** y devuelve conteo, peso total, paralelismo y ejemplos de nombres; si la ruta no existe o no contiene imagenes, se muestra el error (`path-not-found`, `empty-order`) sin iniciar nada.
 - **Edicion de la cola** (pantalla Compresor): cada pendiente ofrece casillas y un panel **Editar opciones de esta imagen** (motor, formato, calidad, coleccion) con aviso visible `override: ...`; la barra de la cola agrega **Sel. todo**, **Aplicar opciones a seleccionadas** (copia los controles globales a todos los marcados), **Quitar seleccionadas** y **Quitar** por archivo. La pausa durante el vuelo deja el archivo en `Pausada` y al reanudarlo lo reintenta desde cero.
 - **Galeria** (`/studio/galeria`): resultados agrupados por **coleccion** (categoria), descarga, copia de base64 y rutas, apertura en el Explorador, detalle con metricas completas y eliminacion. La tarjeta **Gestionar colecciones** da el CRUD completo: crear coleccion vacia, renombrar (actualiza todas sus imagenes) y disolver (pasa todo a `general` sin borrar archivos); `general` esta protegida y los duplicados devuelven `collection-exists` (HTTP 409).
@@ -64,6 +64,8 @@ La interfaz `/studio` es un conjunto de paginas minimalistas con un aside latera
 - **Actividad** (`/studio/actividad`): ordenes orquestadas (pausa/reanuda/cancela) y eventos de trazabilidad con filtro por correlacion.
 
 Los elementos de interfaz incluyen tooltips informativos (puntos `?`) que explican cada control.
+
+El shell se sirve con `Cache-Control: no-cache, no-store, must-revalidate`, de modo que el HTML y los modulos JS siempre corresponden a la misma version. Si el navegador conserva un `index.html` anterior (dropzone como `div`, `#browse-button`), el selector de archivos no abre; un refresco forzado (`Ctrl+F5`) lo resuelve y ya no deberia repetirse.
 
 ## Conversion orquestada (ordenes JSON)
 

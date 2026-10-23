@@ -9,6 +9,16 @@ Todavia no hay release publicada: este es el estado actual del codigo de `main`.
 
 ### Anadido
 
+**Selector de archivos: fin de las roturas tras editar**
+- El host sirve `/studio` con `Cache-Control: no-cache, no-store, must-revalidate`. La
+  causa de que el selector dejara de abrir era un `index.html` cacheado (dropzone como
+  `<div>` con `#browse-button`) conviviendo con el `compress.js` nuevo.
+- El dropzone sigue siendo `<label for="file-input">` (apertura nativa) y `compress.js`
+  mantiene un respaldo por clic si el HTML es anterior al label.
+- Los controles opcionales del Compresor se enlazan con `bind()`: un HTML incompleto ya no
+  aborta la inicializacion de la vista.
+- CI comprueba el contrato del selector (label + input sin `hidden`).
+
 **Herramientas de desarrollo**
 - `build.ps1`: compila y, si hace falta, detiene antes la instancia abierta de la app
   (Windows bloquea el `.exe` y MSBuild fallaba con `MSB3027`/`MSB3021`). Con

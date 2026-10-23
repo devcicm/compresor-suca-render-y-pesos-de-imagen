@@ -16,6 +16,13 @@ let initialized = false;
 let optionsPinned = false;  // el usuario edito opciones o aplico un preset
 let lastOptimized = null;   // { record, options } de la ultima conversion optimizada
 
+/** Escucha en un control opcional: un HTML viejo en cache no debe romper la vista. */
+function bind(id, event, handler) {
+  const node = el(id);
+  if (node) node.addEventListener(event, handler);
+  return node;
+}
+
 export function initCompressView() {
   if (initialized) return;
   initialized = true;
@@ -33,6 +40,15 @@ export function initCompressView() {
       input.click();
     }
   });
+
+  // Compatibilidad con un HTML cacheado anterior al label (div + boton): sin
+  // esto, un index.html viejo con este JS dejaba el selector sin abrir.
+  if (dropzone.tagName !== "LABEL") {
+    dropzone.addEventListener("click", (event) => {
+      if (event.target === input) return;
+      input.click();
+    });
+  }
 
   input.addEventListener("change", () => {
     addFiles(input.files);
@@ -75,36 +91,36 @@ export function initCompressView() {
     void handleDrop(event.dataTransfer);
   });
 
-  el("convert-button").addEventListener("click", () => void convertQueue());
-  el("clear-button").addEventListener("click", clearQueue);
-  el("pause-all-button").addEventListener("click", toggleGlobalPause);
-  el("select-all-button").addEventListener("click", toggleSelectAll);
-  el("apply-to-selected-button").addEventListener("click", applyOptionsToSelected);
-  el("remove-selected-button").addEventListener("click", removeSelected);
-  el("retry-failed-button").addEventListener("click", retryFailed);
-  el("clear-finished-button").addEventListener("click", clearFinished);
-  el("cancel-all-button").addEventListener("click", cancelAllItems);
+  bind("convert-button", "click", () => void convertQueue());
+  bind("clear-button", "click", clearQueue);
+  bind("pause-all-button", "click", toggleGlobalPause);
+  bind("select-all-button", "click", toggleSelectAll);
+  bind("apply-to-selected-button", "click", applyOptionsToSelected);
+  bind("remove-selected-button", "click", removeSelected);
+  bind("retry-failed-button", "click", retryFailed);
+  bind("clear-finished-button", "click", clearFinished);
+  bind("cancel-all-button", "click", cancelAllItems);
 
-  el("preset-select").addEventListener("change", onPresetSelected);
-  el("preset-apply").addEventListener("click", () => applyPresetToAll());
-  el("preset-apply-selected").addEventListener("click", () => applyPresetToSelected());
-  el("preset-save").addEventListener("click", () => void savePresetFromOptions());
-  el("preset-delete").addEventListener("click", () => void deletePreset());
+  bind("preset-select", "change", onPresetSelected);
+  bind("preset-apply", "click", () => applyPresetToAll());
+  bind("preset-apply-selected", "click", () => applyPresetToSelected());
+  bind("preset-save", "click", () => void savePresetFromOptions());
+  bind("preset-delete", "click", () => void deletePreset());
 
   // Panel de valores optimos: reutilizar lo que eligio el optimizador.
-  el("optimal-apply").addEventListener("click", applyOptimalToPending);
-  el("optimal-save-profile").addEventListener("click", saveOptimalAsProfile);
+  bind("optimal-apply", "click", applyOptimalToPending);
+  bind("optimal-save-profile", "click", saveOptimalAsProfile);
 
-  el("browse-folder-button").addEventListener("click", () => void openFolderBrowser());
-  el("order-validate").addEventListener("click", () => void validateOrder());
-  el("folder-close").addEventListener("click", closeFolderBrowser);
-  el("folder-up").addEventListener("click", () => {
+  bind("browse-folder-button", "click", () => void openFolderBrowser());
+  bind("order-validate", "click", () => void validateOrder());
+  bind("folder-close", "click", closeFolderBrowser);
+  bind("folder-up", "click", () => {
     if (folderState.parent !== null && folderState.parent !== undefined) {
       void loadFolder(folderState.parent);
     }
   });
-  el("folder-select").addEventListener("click", selectFolder);
-  el("folder-overlay").addEventListener("click", (event) => {
+  bind("folder-select", "click", selectFolder);
+  bind("folder-overlay", "click", (event) => {
     if (event.target === el("folder-overlay")) closeFolderBrowser();
   });
 
@@ -120,7 +136,8 @@ export function initCompressView() {
     }
   });
 
-  enableListNavigation(el("queue-list"), ".queue-item");
+  const queueList = el("queue-list");
+  if (queueList) enableListNavigation(queueList, ".queue-item");
 
   // Los ajustes llegan despues del arranque: la lista de presets se repinta y
   // solo se aplican los valores por defecto si el usuario no toco las opciones.

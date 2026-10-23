@@ -175,7 +175,16 @@ namespace SUCA_Compressor
                 app.UseStaticFiles(new StaticFileOptions
                 {
                     FileProvider = new PhysicalFileProvider(minichatUiPath),
-                    RequestPath = "/studio"
+                    RequestPath = "/studio",
+                    // El shell se edita en caliente: sin no-store, el navegador puede
+                    // servir un index.html viejo con el JS nuevo (o al reves) y dejar
+                    // botones como el selector de archivos sin efecto.
+                    OnPrepareResponse = static ctx =>
+                    {
+                        ctx.Context.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+                        ctx.Context.Response.Headers["Pragma"] = "no-cache";
+                        ctx.Context.Response.Headers["Expires"] = "0";
+                    }
                 });
             }
 

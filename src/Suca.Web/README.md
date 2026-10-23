@@ -21,6 +21,26 @@ wwwroot/
     activity.js         Ordenes orquestadas y eventos de trazabilidad
 ```
 
+## Selector de archivos local (no romperlo al editar)
+
+El dropzone del Compresor es un `<label for="file-input">` que **contiene** al
+`<input id="file-input" type="file" class="visually-hidden">`. La apertura del dialogo es
+**nativa del navegador**: no depende de JS, ni de `input.click()` por puntero, ni de
+`window.confirm`. Reglas:
+
+- No volver a un `<div role="button">` + `input.click()`: algunos navegadores y extensiones
+  bloquean el click sintetico y el boton queda muerto.
+- El input no puede llevar el atributo `hidden` (use `.visually-hidden`, 1x1 y `display:
+  block`): es el patron accesible y sigue siendo activable por el label.
+- El teclado (Enter/Espacio) se conserva con `input.click()` dentro del `keydown`, que si es
+  un gesto de usuario valido.
+- Los controles opcionales se enlazan con `bind(id, evento, handler)` en `compress.js`: si un
+  HTML cacheado no trae ese control, la vista no aborta su inicializacion.
+- El host sirve `/studio` con `Cache-Control: no-cache, no-store, must-revalidate`: evita que
+  un `index.html` viejo conviva con un `compress.js` nuevo (era la causa de que el selector
+  dejara de abrir tras cada edicion).
+- CI valida el contrato en `.github/workflows/ci.yml` ("Selector de archivos local").
+
 ## Convenciones CSS (sin antipatrones)
 
 - Tokens unicos en `:root` (espaciado 4/8, radios, sombras, color, z-index).
