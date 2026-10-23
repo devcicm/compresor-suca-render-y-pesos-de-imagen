@@ -208,7 +208,17 @@ namespace SUCA_Compressor
             app.MapGet("/api/lmstudio/models", async (CancellationToken ct) =>
             {
                 var admin = new LmStudioModelAdmin(new LmStudioOptions());
-                return Results.Ok(await admin.ListDetailedModelsAsync(ct).ConfigureAwait(false));
+                try
+                {
+                    return Results.Ok(await admin.ListDetailedModelsAsync(ct).ConfigureAwait(false));
+                }
+                catch (Exception ex)
+                {
+                    // LM Studio es un servicio externo: 503 explica mejor que un 500.
+                    return Results.Json(
+                        new { error = $"LM Studio no esta disponible: {ex.Message}", serviceUnavailable = true },
+                        statusCode: StatusCodes.Status503ServiceUnavailable);
+                }
             });
 
             app.MapGet("/api/minichat/defaults", (ISucaSettingsService settings) =>
@@ -327,13 +337,83 @@ namespace SUCA_Compressor
                 return Results.Ok(ToLmStudioInsightResponse(result));
             });
 
-            app.MapGet("/api/minichat/conversations", async (IReliableChatService chat, CancellationToken ct) =>
-                Results.Ok(await chat.ListConversationsAsync(ct).ConfigureAwait(false)));
+            app.MapGet("/api/minichat/conversations", async (string? search, IReliableChatService chat, CancellationToken ct) =>
+                Results.Ok(string.IsNullOrWhiteSpace(search)
+                    ? await chat.ListConversationsAsync(ct).ConfigureAwait(false)
+                    : await chat.SearchConversationsAsync(search, ct).ConfigureAwait(false)));
 
             app.MapGet("/api/minichat/conversations/{id}", async (string id, IReliableChatService chat, CancellationToken ct) =>
             {
                 var conversation = await chat.GetConversationAsync(id, ct).ConfigureAwait(false);
                 return conversation is null ? Results.NotFound() : Results.Ok(conversation);
+            });
+
+            app.MapPatch("/api/minichat/conversations/{id}", async (string id, JsonElement payload, IReliableChatService chat, CancellationToken ct) =>
+            {
+                string title = payload.TryGetProperty("title", out JsonElement titleElement)
+                    ? titleElement.GetString() ?? ""
+                    : "";
+
+                var updated = await chat.RenameConversationAsync(id, title, ct).ConfigureAwait(false);
+                return updated is null
+                    ? Results.Json(
+                        new { error = "No se pudo renombrar la conversacion.", errorCode = ConversionErrorCodes.RecordNotFound },
+                        statusCode: StatusCodes.Status404NotFound)
+                    : Results.Ok(new { conversationId = updated.ConversationId, title = updated.Title, updatedAtUtc = updated.LastUpdatedAtUtc });
+            });
+
+            app.MapDelete("/api/minichat/conversations/{id}", async (string id, IReliableChatService chat, CancellationToken ct) =>
+                await chat.DeleteConversationAsync(id, ct).ConfigureAwait(false)
+                    ? Results.NoContent()
+                    : Results.NotFound());
+
+            // Respuesta en streaming (SSE): un evento por linea con formato OpenAI-like.
+            app.MapPost("/api/minichat/chat/stream", async (
+                ChatCompletionRequest request,
+                IReliableChatService chat,
+                HttpContext httpContext,
+                CancellationToken ct) =>
+            {
+                httpContext.Response.Headers.CacheControl = "no-cache";
+                httpContext.Response.Headers["X-Accel-Buffering"] = "no";
+                httpContext.Response.ContentType = "text/event-stream; charset=utf-8";
+
+                CancellationToken token = LinkToken(httpContext, ct);
+
+                await foreach (ChatStreamEvent evt in chat.StreamAsync(request, token).ConfigureAwait(false))
+                {
+                    string json = System.Text.Json.JsonSerializer.Serialize(evt, JsonDefaults.Loose);
+                    await httpContext.Response.WriteAsync($"data: {json}\n\n", token).ConfigureAwait(false);
+                    await httpContext.Response.Body.FlushAsync(token).ConfigureAwait(false);
+                }
+
+                await httpContext.Response.WriteAsync("data: [DONE]\n\n", CancellationToken.None).ConfigureAwait(false);
+                return Results.Empty;
+            });
+
+            // Estado de LM Studio: la UI lo consulta para mostrar el banner de servicio caido.
+            app.MapGet("/api/lmstudio/health", async (ISucaSettingsService settings, CancellationToken ct) =>
+            {
+                string baseUrl = (settings.GetEffective().LmStudio.BaseUrl ?? "http://127.0.0.1:1234/v1").TrimEnd('/');
+                string modelsUrl = $"{baseUrl}/models";
+
+                try
+                {
+                    using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+                    using var request = new HttpRequestMessage(HttpMethod.Get, modelsUrl);
+                    using HttpResponseMessage response = await client.SendAsync(request, ct).ConfigureAwait(false);
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        return Results.Ok(new { status = "available", baseUrl, modelsUrl });
+                    }
+
+                    return Results.Ok(new { status = "unavailable", baseUrl, modelsUrl, detail = $"HTTP {(int)response.StatusCode}" });
+                }
+                catch (Exception ex)
+                {
+                    return Results.Ok(new { status = "unavailable", baseUrl, modelsUrl, detail = ex.Message });
+                }
             });
 
             app.MapPost("/api/minichat/messages/send", async (ReliableChatSendRequest request, IReliableChatService chat, HttpContext httpContext, CancellationToken ct) =>

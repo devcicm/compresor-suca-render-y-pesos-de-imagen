@@ -623,6 +623,114 @@ namespace SUCA_Compressor
             return ReadChatContent(doc.RootElement);
         }
 
+        /// <summary>
+        /// Chat con respuesta progresiva: entrega cada fragmento de texto tal como llega de
+        /// LM Studio (SSE) mediante onDelta. Devuelve el texto completo acumulado.
+        /// </summary>
+        public async Task<string> ChatStreamAsync(
+            IEnumerable<LmStudioChatMessage> messages,
+            Func<string, CancellationToken, Task> onDelta,
+            CancellationToken cancellationToken = default)
+        {
+            if (messages is null) throw new ArgumentNullException(nameof(messages));
+            if (onDelta is null) throw new ArgumentNullException(nameof(onDelta));
+
+            var payload = new
+            {
+                model = Options.ChatModel,
+                temperature = Options.Temperature,
+                max_tokens = Options.MaxTokens,
+                stream = true,
+                messages = messages.Select(ToTextMessage).ToArray()
+            };
+
+            string url = BuildUrl("chat/completions");
+            string json = JsonSerializer.Serialize(payload, JsonDefaults.Default);
+            using var req = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            };
+
+            if (!string.IsNullOrWhiteSpace(Options.ApiKey))
+                req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {Options.ApiKey}");
+
+            using HttpResponseMessage resp = await _http
+                .SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                string errorBody = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                throw new HttpRequestException($"LM Studio devolvió {(int)resp.StatusCode}: {errorBody}");
+            }
+
+            await using Stream stream = await resp.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            using var reader = new StreamReader(stream);
+
+            var accumulated = new System.Text.StringBuilder();
+            while (!reader.EndOfStream)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                string? line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+                if (line is null) break;
+                if (line.Length == 0) continue;
+
+                string payloadLine = line.StartsWith("data:", StringComparison.OrdinalIgnoreCase)
+                    ? line[5..].Trim()
+                    : line.Trim();
+
+                if (payloadLine.Length == 0) continue;
+                if (payloadLine.Equals("[DONE]", StringComparison.OrdinalIgnoreCase)) break;
+
+                string? delta = TryReadDelta(payloadLine);
+                if (string.IsNullOrEmpty(delta)) continue;
+
+                accumulated.Append(delta);
+                await onDelta(delta, cancellationToken).ConfigureAwait(false);
+            }
+
+            return accumulated.ToString();
+        }
+
+        /// <summary>Extrae el fragmento de un evento SSE de chat (choices[0].delta.content).</summary>
+        private static string? TryReadDelta(string json)
+        {
+            try
+            {
+                using JsonDocument doc = JsonDocument.Parse(json);
+                if (!doc.RootElement.TryGetProperty("choices", out JsonElement choices)
+                    || choices.ValueKind != JsonValueKind.Array
+                    || choices.GetArrayLength() == 0)
+                {
+                    return null;
+                }
+
+                JsonElement first = choices[0];
+                if (first.TryGetProperty("delta", out JsonElement delta)
+                    && delta.ValueKind == JsonValueKind.Object
+                    && delta.TryGetProperty("content", out JsonElement content)
+                    && content.ValueKind == JsonValueKind.String)
+                {
+                    return content.GetString();
+                }
+
+                if (first.TryGetProperty("message", out JsonElement message)
+                    && message.TryGetProperty("content", out JsonElement full)
+                    && full.ValueKind == JsonValueKind.String)
+                {
+                    return full.GetString();
+                }
+
+                return null;
+            }
+            catch (JsonException)
+            {
+                // LM Studio puede emitir metadatos que no son JSON; se ignoran.
+                return null;
+            }
+        }
+
         public async Task<ParsedLlmJsonResponse> ChatAsJsonAsync(
             IEnumerable<LmStudioChatMessage> messages,
             string schemaName,

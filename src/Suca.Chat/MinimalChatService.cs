@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -18,6 +19,10 @@ namespace SUCA_Compressor
         Task<OpenAiStyleChatResponse> CompleteAsync(ChatCompletionRequest request, CancellationToken cancellationToken = default);
         Task<IReadOnlyList<ChatConversation>> ListConversationsAsync(CancellationToken cancellationToken = default);
         Task<ChatConversation?> GetConversationAsync(string conversationId, CancellationToken cancellationToken = default);
+        Task<ChatConversation?> RenameConversationAsync(string conversationId, string? title, CancellationToken cancellationToken = default);
+        Task<bool> DeleteConversationAsync(string conversationId, CancellationToken cancellationToken = default);
+        Task<IReadOnlyList<ChatConversation>> SearchConversationsAsync(string? query, CancellationToken cancellationToken = default);
+        IAsyncEnumerable<ChatStreamEvent> StreamAsync(ChatCompletionRequest request, CancellationToken cancellationToken = default);
     }
 
     internal sealed class ReliableChatStore
@@ -88,6 +93,72 @@ namespace SUCA_Compressor
             string path = ConversationPath(conversation.ConversationId);
             string json = JsonSerializer.Serialize(conversation, JsonDefaults.Indented);
             await _fileStore.WriteAllTextAtomicAsync(path, json, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>Busca por titulo o por contenido de cualquier mensaje.</summary>
+        public async Task<IReadOnlyList<ChatConversation>> SearchConversationsAsync(string? query, CancellationToken cancellationToken)
+        {
+            var all = await ListConversationsAsync(cancellationToken).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(query))
+                return all;
+
+            string needle = query.Trim();
+            return all
+                .Where(conv =>
+                    (conv.Title?.Contains(needle, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || conv.Messages.Any(m => (m.Content?.Contains(needle, StringComparison.OrdinalIgnoreCase) ?? false)))
+                .ToList();
+        }
+
+        /// <summary>Cambia el titulo de una conversacion existente.</summary>
+        public async Task<ChatConversation?> RenameConversationAsync(string conversationId, string? title, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(conversationId) || string.IsNullOrWhiteSpace(title))
+                return null;
+
+            await using var lease = await _keyedLock.AcquireAsync(conversationId, cancellationToken).ConfigureAwait(false);
+            ChatConversation? conversation = await GetConversationAsync(conversationId, cancellationToken).ConfigureAwait(false);
+            if (conversation is null)
+                return null;
+
+            string trimmed = title.Trim();
+            if (trimmed.Length > 120)
+                trimmed = trimmed[..120];
+
+            conversation.Title = trimmed;
+            await SaveConversationAsync(conversation, cancellationToken).ConfigureAwait(false);
+            return conversation;
+        }
+
+        /// <summary>Elimina la conversacion y sus mensajes en cola (inbox/outbox).</summary>
+        public async Task<bool> DeleteConversationAsync(string conversationId, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(conversationId))
+                return false;
+
+            await using var lease = await _keyedLock.AcquireAsync(conversationId, cancellationToken).ConfigureAwait(false);
+            string path = ConversationPath(conversationId);
+            if (!File.Exists(path))
+                return false;
+
+            File.Delete(path);
+
+            foreach (string folder in new[] { "inbox", "outbox", "dead-letter" })
+            {
+                string dir = Path.Combine(_rootPath, folder);
+                if (!Directory.Exists(dir))
+                    continue;
+
+                foreach (string file in Directory.EnumerateFiles(dir, "*.json", SearchOption.TopDirectoryOnly))
+                {
+                    if (!File.ReadAllText(file).Contains(conversationId, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    File.Delete(file);
+                }
+            }
+
+            return true;
         }
 
         public async Task AppendEnvelopeAsync(ChatConversation conversation, ReliableChatEnvelope envelope, CancellationToken cancellationToken)
@@ -291,6 +362,120 @@ namespace SUCA_Compressor
 
         public Task<ChatConversation?> GetConversationAsync(string conversationId, CancellationToken cancellationToken = default) =>
             _store.GetConversationAsync(conversationId, cancellationToken);
+
+        public Task<ChatConversation?> RenameConversationAsync(string conversationId, string? title, CancellationToken cancellationToken = default) =>
+            _store.RenameConversationAsync(conversationId, title, cancellationToken);
+
+        public Task<bool> DeleteConversationAsync(string conversationId, CancellationToken cancellationToken = default) =>
+            _store.DeleteConversationAsync(conversationId, cancellationToken);
+
+        public Task<IReadOnlyList<ChatConversation>> SearchConversationsAsync(string? query, CancellationToken cancellationToken = default) =>
+            _store.SearchConversationsAsync(query, cancellationToken);
+
+        /// <summary>
+        /// Envia el mensaje y emite la respuesta en fragmentos (SSE hacia el host).
+        /// Persiste el mensaje final exactamente igual que <see cref="SendAsync"/>, de modo
+        /// que una conversacion tiene la misma estructura llegue como llegue.
+        /// </summary>
+        public async IAsyncEnumerable<ChatStreamEvent> StreamAsync(
+            ChatCompletionRequest request,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            if (request is null) throw new ArgumentNullException(nameof(request));
+            string userMessage = request.Messages?.LastOrDefault(x => string.Equals(x.Role, "user", StringComparison.OrdinalIgnoreCase))?.Content ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(userMessage))
+            {
+                yield return ChatStreamEvent.Error("No hay ningun mensaje del usuario.");
+                yield break;
+            }
+
+            var send = new ReliableChatSendRequest
+            {
+                ConversationId = request.ConversationId,
+                UserMessage = userMessage,
+                IdempotencyKey = request.IdempotencyKey,
+                LmStudio = request.LmStudio is null
+                    ? new LmStudioOptions { ChatModel = request.Model, Temperature = request.Temperature, MaxTokens = request.MaxTokens }
+                    : NormalizeLmStudioOptions(request.LmStudio, request.Model, request.Temperature, request.MaxTokens),
+                Rag = request.Rag
+            };
+
+            _observability.RecordStart("minichat-stream");
+
+            ChatConversation conversation = await _store.GetOrCreateConversationAsync(send.ConversationId, send.Title, cancellationToken).ConfigureAwait(false);
+            yield return ChatStreamEvent.Started(conversation.ConversationId);
+
+            var userEnvelope = CreateEnvelope(conversation, "user", "user", "assistant", userMessage, send.IdempotencyKey, parentMessageId: null);
+            userEnvelope.DeliveryStatus = ChatDeliveryStatus.Acknowledged;
+            userEnvelope.DeliveredAtUtc = DateTimeOffset.UtcNow;
+            userEnvelope.AcknowledgedAtUtc = DateTimeOffset.UtcNow;
+            await _store.AppendEnvelopeAsync(conversation, userEnvelope, cancellationToken).ConfigureAwait(false);
+
+            var assistantEnvelope = CreateEnvelope(conversation, "assistant", "assistant", "user", string.Empty, null, userEnvelope.MessageId);
+            assistantEnvelope.DeliveryStatus = ChatDeliveryStatus.Delivered;
+
+            var accumulated = new System.Text.StringBuilder();
+            bool failed = false;
+            string? error = null;
+
+            // Canal local a esta peticion: dos streams simultaneos no se mezclan.
+            var deltas = Channel.CreateUnbounded<ChatStreamEvent>();
+            var contexts = new List<object>();
+
+            try
+            {
+                var client = new LmStudioClient(send.LmStudio);
+                contexts = await ResolveContextsAsync(client, send.Rag, userMessage, cancellationToken).ConfigureAwait(false);
+                IEnumerable<LmStudioChatMessage> messages = BuildPromptMessages(conversation, userMessage, contexts);
+
+                _ = await client.ChatStreamAsync(messages, async (delta, token) =>
+                {
+                    accumulated.Append(delta);
+                    await deltas.Writer.WriteAsync(ChatStreamEvent.Delta(delta), token).ConfigureAwait(false);
+                }, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                failed = true;
+                error = "Generacion cancelada.";
+            }
+            catch (Exception ex)
+            {
+                failed = true;
+                error = ex.Message;
+                _logger.LogError(ex, "Chat stream failed: {Message}", ex.Message);
+                _observability.RecordFailure("minichat-stream", ex, conversation.ConversationId);
+            }
+            finally
+            {
+                deltas.Writer.TryComplete();
+            }
+
+            // Citas RAG antes que el texto: el usuario ve de donde sale la respuesta.
+            foreach (object context in contexts)
+                yield return ChatStreamEvent.FromContext(context);
+
+            // Vuelca los fragmentos acumulados que aun no salieron por el canal.
+            while (await deltas.Reader.WaitToReadAsync(CancellationToken.None).ConfigureAwait(false))
+            {
+                while (deltas.Reader.TryRead(out ChatStreamEvent? pending))
+                    yield return pending;
+            }
+
+            assistantEnvelope.Content = accumulated.ToString();
+            assistantEnvelope.DeliveryStatus = failed ? ChatDeliveryStatus.Failed : ChatDeliveryStatus.Delivered;
+            await _store.AppendEnvelopeAsync(conversation, assistantEnvelope, cancellationToken).ConfigureAwait(false);
+
+            if (failed)
+            {
+                _observability.RecordFailure("minichat-stream", new InvalidOperationException(error ?? "Fallo desconocido"), conversation.ConversationId);
+                yield return ChatStreamEvent.Error(error ?? "No se pudo completar la respuesta.");
+                yield break;
+            }
+
+            _observability.RecordSuccess("minichat-stream", $"{conversation.ConversationId} ({accumulated.Length} car.)", conversation.ConversationId);
+            yield return ChatStreamEvent.Completed(conversation.ConversationId, assistantEnvelope.MessageId, accumulated.ToString());
+        }
 
         private static void ValidateRequest(ReliableChatSendRequest request)
         {

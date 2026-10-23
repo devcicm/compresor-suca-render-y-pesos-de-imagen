@@ -51,6 +51,46 @@ namespace SUCA_Compressor
         public int MaxDeliveryAttempts { get; set; } = 3;
     }
 
+    // Eventos del stream de chat (SSE): el host los reenvia tal cual al navegador.
+    public enum ChatStreamEventType
+    {
+        Started,
+        Context,
+        Delta,
+        Completed,
+        Error
+    }
+
+    public sealed class ChatStreamEvent
+    {
+        public ChatStreamEventType Type { get; init; }
+        public string? ConversationId { get; init; }
+        public string? MessageId { get; init; }
+        public string? Text { get; init; }
+        public object? Context { get; init; }
+
+        public static ChatStreamEvent Started(string conversationId) =>
+            new() { Type = ChatStreamEventType.Started, ConversationId = conversationId };
+
+        public static ChatStreamEvent FromContext(object context) =>
+            new() { Type = ChatStreamEventType.Context, Context = context };
+
+        public static ChatStreamEvent Delta(string text) =>
+            new() { Type = ChatStreamEventType.Delta, Text = text };
+
+        public static ChatStreamEvent Completed(string conversationId, string messageId, string fullText) =>
+            new()
+            {
+                Type = ChatStreamEventType.Completed,
+                ConversationId = conversationId,
+                MessageId = messageId,
+                Text = fullText
+            };
+
+        public static ChatStreamEvent Error(string message) =>
+            new() { Type = ChatStreamEventType.Error, Text = message };
+    }
+
     public sealed class ReliableChatEnvelope
     {
         public string MessageId { get; set; } = "";

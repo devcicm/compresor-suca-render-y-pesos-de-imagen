@@ -77,6 +77,27 @@ js/main.js       Estado global, ajustes, toasts, sondeo de /health y utilidades
   navegables usan `data-nav-item` y flechas; el progreso se anuncia con una region viva
   (`.visually-hidden`, `role="status"`).
 
+## Chat: banner de servicio, streaming y Markdown
+
+- **Banner de LM Studio**: consulta `GET /api/lmstudio/health` al abrir la pagina y muestra
+  el estado con el enlace para abrirlo y un boton **Reintentar**; si responde, el banner se
+  oculta solo a los 2,5 s. `GET /api/lmstudio/models` responde ahora **503** con detalle
+  cuando el servicio externo esta caido (antes era un 500 opaco).
+- **Streaming (SSE)**: `POST /api/minichat/chat/stream` reenvia los fragmentos de LM Studio
+  (`Started`, `Context`, `Delta`, `Completed`, `Error` y `[DONE]`). La UI los pinta al vuelo
+  con un punto pulsante y ofrece **Detener**, que aborta la peticion; el mensaje queda
+  persistido igualmente en la conversacion. El canal de fragmentos es **local por peticion**
+  (dos streams simultaneos no se mezclan).
+- **Markdown vendorizado** (`js/vendor/markdown.js`, MIT, sin npm): encabezados, listas,
+  citas, bloques de codigo con boton **Copiar**, negritas, cursivas y enlaces. Todo el texto
+  se escapa antes de transformarse (verificado: `<script>` y `<img onerror>` salen como
+  texto). Licencia en `THIRD-PARTY-NOTICES.md`.
+- **Citas RAG**: los eventos `Context` se muestran como chips bajo el mensaje. Viven fuera
+  del cuerpo Markdown porque el repintado por fragmentos regenera su `innerHTML`.
+- **Gestion de conversaciones**: buscador por titulo o contenido, **Renombrar**
+  (`PATCH /api/minichat/conversations/{id}`) y **Eliminar** (`DELETE .../{id}`, que tambien
+  limpia inbox/outbox). Botones visibles solo con conversacion seleccionada.
+
 ## Galeria: busqueda, seleccion y vistas
 
 - **Buscador y orden**: filtro por nombre (con rebote de 200 ms) y orden por recientes,

@@ -1,9 +1,12 @@
-import { el, escapeHtml, toast, fetchJson } from "../main.js";
+import { el, escapeHtml, toast, fetchJson, copyTextToClipboard } from "../main.js";
+import { renderMarkdown } from "../vendor/markdown.js";
 
 const chatState = {
   conversationId: null,
   conversations: [],
-  busy: false
+  busy: false,
+  streaming: false,
+  streamAbort: null
 };
 
 const defaults = {
@@ -35,6 +38,13 @@ export function initChatView() {
   el("new-chat-button").addEventListener("click", resetConversation);
   el("refresh-conversations-button").addEventListener("click", () => void loadConversations());
 
+  // Estado de LM Studio, busqueda y gestion de conversaciones.
+  el("lmstudio-retry").addEventListener("click", () => void checkLmStudio());
+  el("conversation-search").addEventListener("input", debounce(() => void loadConversations(), 250));
+  el("rename-conversation-button").addEventListener("click", () => void renameCurrentConversation());
+  el("delete-conversation-button").addEventListener("click", () => void deleteCurrentConversation());
+  el("stop-button").addEventListener("click", stopStreaming);
+
   [
     "base-url", "chat-model", "embedding-model", "temperature", "max-tokens",
     "source-directory", "semantic-index-path", "top-k", "chunk-size", "chunk-overlap",
@@ -57,8 +67,46 @@ async function initialize() {
   } catch { /* usa valores locales */ }
 
   applyLocalSettings(loadLocalSettings());
-  await Promise.all([loadModels(), loadConversations()]);
+  await Promise.all([loadModels(), loadConversations(), checkLmStudio()]);
   setComposerStatus("Listo");
+}
+
+/* ============================== Estado de LM Studio ============================== */
+
+async function checkLmStudio() {
+  const banner = el("lmstudio-banner");
+  banner.hidden = false;
+  banner.setAttribute("data-state", "checking");
+  el("lmstudio-banner-text").textContent = "Comprobando LM Studio...";
+
+  try {
+    const health = await fetchJson("/api/lmstudio/health");
+    if (health.status === "available") {
+      banner.setAttribute("data-state", "ok");
+      el("lmstudio-banner-text").textContent = `LM Studio disponible en ${health.baseUrl}`;
+      window.setTimeout(() => {
+        banner.hidden = true;
+      }, 2500);
+      return true;
+    }
+
+    banner.setAttribute("data-state", "down");
+    el("lmstudio-banner-text").textContent =
+      `LM Studio no responde en ${health.baseUrl}${health.detail ? ` (${health.detail})` : ""}. Arrancala para usar el chat.`;
+    return false;
+  } catch (error) {
+    banner.setAttribute("data-state", "down");
+    el("lmstudio-banner-text").textContent = `No se pudo comprobar LM Studio: ${error.message}`;
+    return false;
+  }
+}
+
+function debounce(fn, ms) {
+  let timer = 0;
+  return (...args) => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => fn(...args), ms);
+  };
 }
 
 async function loadModels() {
@@ -79,13 +127,18 @@ async function loadModels() {
 
     saveLocalSettings();
   } catch (error) {
+    // El banner ya explica la causa; aqui solo dejamos constancia en el resumen.
     setResponseSummary(`No se pudieron leer los modelos de LM Studio.\n${error.message}`);
   }
 }
 
 async function loadConversations() {
   try {
-    chatState.conversations = await fetchJson("/api/minichat/conversations");
+    const search = el("conversation-search").value.trim();
+    const url = search
+      ? `/api/minichat/conversations?search=${encodeURIComponent(search)}`
+      : "/api/minichat/conversations";
+    chatState.conversations = await fetchJson(url);
     renderConversationList();
   } catch (error) {
     setResponseSummary(`No se pudieron cargar las conversaciones.\n${error.message}`);
@@ -121,30 +174,153 @@ async function onSendMessage(event) {
   input.value = "";
 
   try {
-    const result = await fetchJson("/api/minichat/messages/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildRequest(content))
-    });
-
-    chatState.conversationId = result.conversationId;
-    await loadConversations();
-    await loadConversation(result.conversationId);
-
-    const delivery = result.assistant?.deliveryStatus || result.assistant?.delivery?.status || "Acknowledged";
-    setDeliveryState(delivery);
-    setResponseSummary(formatResponseSummary(result));
-    setComposerStatus("Entregado");
+    await streamCompletion(content);
   } catch (error) {
-    setDeliveryState("Fallo");
-    setComposerStatus("La solicitud fallo");
-    setResponseSummary(error.message);
-    await loadConversations();
+    if (error.name === "AbortError") {
+      setComposerStatus("Generacion detenida");
+      setDeliveryState("Cancelada");
+    } else {
+      setDeliveryState("Fallo");
+      setComposerStatus("La solicitud fallo");
+      setResponseSummary(error.message);
+      toast(`Chat: ${error.message}`, "error");
+    }
   } finally {
     chatState.busy = false;
+    chatState.streaming = false;
+    chatState.streamAbort = null;
     setBusy(false);
     input.focus();
+    await loadConversations();
   }
+}
+
+/* Envia el mensaje y consume el stream SSE: los fragmentos se pintan al vuelo. */
+async function streamCompletion(content) {
+  const controller = new AbortController();
+  chatState.streamAbort = controller;
+  chatState.streaming = true;
+  el("stop-button").hidden = false;
+  setComposerStatus("Generando...");
+
+  const assistantNode = appendStreamingMessage();
+  let accumulated = "";
+  let streamFailed = false;
+
+  try {
+    const response = await fetch("/api/minichat/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      body: JSON.stringify(buildChatCompletionRequest(content)),
+      signal: controller.signal
+    });
+
+    if (!response.ok || !response.body) {
+      const body = await response.json().catch(() => null);
+      throw new Error(body?.error || `HTTP ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+
+        const payload = trimmed.slice(5).trim();
+        if (payload === "[DONE]") {
+          finalizeStreamingMessage(assistantNode, accumulated, streamFailed ? "Incompleta" : "Entregado");
+          setComposerStatus(streamFailed ? "La peticion fallo" : "Entregado");
+          return;
+        }
+
+        let event;
+        try {
+          event = JSON.parse(payload);
+        } catch {
+          continue;
+        }
+
+        if (event.type === 4) streamFailed = true;
+        handleStreamEvent(event, assistantNode, (text) => {
+          accumulated += text;
+          paintStreamingMessage(assistantNode, accumulated);
+        });
+      }
+    }
+
+    finalizeStreamingMessage(assistantNode, accumulated, streamFailed ? "Incompleta" : "Entregado");
+    setComposerStatus(streamFailed ? "La peticion fallo" : "Entregado");
+  } catch (error) {
+    finalizeStreamingMessage(assistantNode, accumulated, "Incompleta");
+    throw error;
+  }
+}
+
+function handleStreamEvent(event, node, appendDelta) {
+  switch (event.type) {
+    case 0: // Started
+      chatState.conversationId = event.conversationId || chatState.conversationId;
+      setDeliveryState("Entregando");
+      break;
+    case 1: // Context (cita RAG)
+      addCitation(node, event.context);
+      break;
+    case 2: // Delta
+      appendDelta(event.text || "");
+      break;
+    case 3: // Completed
+      setDeliveryState("Entregado");
+      setResponseSummary(formatCompletedSummary(event));
+      if (event.conversationId) chatState.conversationId = event.conversationId;
+      break;
+    case 4: // Error
+      setDeliveryState("Fallo");
+      setComposerStatus("La peticion fallo");
+      toast(`Chat: ${event.text || "error desconocido"}`, "error");
+      break;
+    default:
+      break;
+  }
+}
+
+function formatCompletedSummary(event) {
+  return [
+    `mensaje: ${event.messageId || "-"}`,
+    `conversacion: ${event.conversationId || "-"}`,
+    `caracteres: ${(event.text || "").length}`
+  ].join("\n");
+}
+
+function stopStreaming() {
+  if (!chatState.streamAbort) return;
+  chatState.streamAbort.abort();
+  chatState.streamAbort = null;
+  el("stop-button").hidden = true;
+  setComposerStatus("Deteniendo...");
+}
+
+function buildChatCompletionRequest(userMessage) {
+  const request = buildRequest(userMessage);
+  return {
+    conversationId: request.conversationId,
+    idempotencyKey: request.idempotencyKey,
+    model: request.lmStudio.chatModel,
+    temperature: request.lmStudio.temperature,
+    maxTokens: request.lmStudio.maxTokens,
+    lmStudio: request.lmStudio,
+    rag: request.rag,
+    messages: [{ role: "user", content: userMessage }]
+  };
 }
 
 function buildRequest(userMessage) {
@@ -184,8 +360,14 @@ function renderConversationList() {
   const container = el("conversation-list");
   container.innerHTML = "";
 
-  if (!chatState.conversations.length) {
-    container.innerHTML = `<div class="empty-state">Sin conversaciones todavia.</div>`;
+  const search = el("conversation-search").value.trim();
+  const hasConversations = chatState.conversations.length > 0;
+
+  el("rename-conversation-button").hidden = !chatState.conversationId;
+  el("delete-conversation-button").hidden = !chatState.conversationId;
+
+  if (!hasConversations) {
+    container.innerHTML = `<div class="empty-state">${search ? "Ninguna conversacion coincide con la busqueda." : "Sin conversaciones todavia."}</div>`;
     return;
   }
 
@@ -245,11 +427,165 @@ function buildMessageNode(role, content, envelope) {
   meta.textContent = `${role}${status} | ${when}`;
 
   const body = document.createElement("div");
-  body.textContent = content || "(vacio)";
+  body.className = "message-body";
+
+  if (role === "assistant") {
+    // Markdown con boton de copiar en los bloques de codigo.
+    body.innerHTML = renderMarkdown(content || "_(vacio)_");
+    bindCopyButtons(body, content || "");
+  } else {
+    body.textContent = content || "(vacio)";
+  }
 
   article.appendChild(meta);
   article.appendChild(body);
   return article;
+}
+
+function bindCopyButtons(body, rawText) {
+  body.querySelectorAll("pre.md-code").forEach((block, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn md-copy";
+    button.textContent = "Copiar";
+    button.addEventListener("click", async () => {
+      const code = block.querySelector("code")?.textContent || "";
+      const ok = await copyTextToClipboard(code);
+      button.textContent = ok ? "Copiado" : "Error";
+      window.setTimeout(() => {
+        button.textContent = "Copiar";
+      }, 1600);
+    });
+    block.appendChild(button);
+    block.dataset.index = String(index);
+  });
+
+  if (rawText.trim().length > 0) {
+    const copyAll = document.createElement("button");
+    copyAll.type = "button";
+    copyAll.className = "btn md-copy-all";
+    copyAll.textContent = "Copiar respuesta";
+    copyAll.addEventListener("click", async () => {
+      const ok = await copyTextToClipboard(rawText);
+      copyAll.textContent = ok ? "Copiado" : "Error";
+      window.setTimeout(() => {
+        copyAll.textContent = "Copiar respuesta";
+      }, 1600);
+    });
+    body.appendChild(copyAll);
+  }
+}
+
+/* ============================== Mensaje en streaming ============================== */
+
+function appendStreamingMessage() {
+  const messageList = el("message-list");
+  if (messageList.querySelector(".empty-state")) messageList.innerHTML = "";
+
+  const article = document.createElement("article");
+  article.className = "message assistant streaming";
+
+  const meta = document.createElement("div");
+  meta.className = "message-meta";
+  meta.textContent = `assistant | ${new Date().toLocaleString()}`;
+
+  const body = document.createElement("div");
+  body.className = "message-body";
+  body.innerHTML = '<span class="typing-dot" aria-hidden="true"></span>';
+
+  article.appendChild(meta);
+  article.appendChild(body);
+  messageList.appendChild(article);
+  messageList.scrollTop = messageList.scrollHeight;
+
+  return article;
+}
+
+function paintStreamingMessage(article, text) {
+  const body = article.querySelector(".message-body");
+  body.innerHTML = renderMarkdown(text);
+  body.insertAdjacentHTML("beforeend", '<span class="typing-dot" aria-hidden="true"></span>');
+  el("message-list").scrollTop = el("message-list").scrollHeight;
+}
+
+function finalizeStreamingMessage(article, text, state) {
+  article.classList.remove("streaming");
+  const body = article.querySelector(".message-body");
+  body.innerHTML = renderMarkdown(text || "_(sin contenido)_");
+  bindCopyButtons(body, text || "");
+  const meta = article.querySelector(".message-meta");
+  if (meta) meta.textContent = `${meta.textContent} | ${state}`;
+}
+
+function addCitation(article, context) {
+  if (!context) return;
+
+  // Las citas viven FUERA del cuerpo Markdown: al repintar el texto se
+  // regenera su innerHTML y se perderian si estuvieran dentro.
+  let holder = article.querySelector(".message-citations");
+  if (!holder) {
+    holder = document.createElement("div");
+    holder.className = "message-citations";
+    const label = document.createElement("span");
+    label.className = "muted-note";
+    label.textContent = "Fuentes RAG:";
+    holder.appendChild(label);
+    article.appendChild(holder);
+  }
+
+  const chip = document.createElement("span");
+  chip.className = "chip";
+  chip.setAttribute("data-kind", "accent");
+  const source = context.sourcePath || context.item?.sourcePath || context.source || "documento";
+  chip.textContent = String(source).split(/[\\/]/).pop();
+  chip.title = String(source);
+  holder.appendChild(chip);
+}
+
+/* ============================== Gestion de conversaciones ============================== */
+
+async function renameCurrentConversation() {
+  if (!chatState.conversationId) return;
+
+  const current = chatState.conversations.find((item) => item.conversationId === chatState.conversationId);
+  const suggestion = current?.title || "Nueva conversacion";
+  const title = window.prompt("Nuevo titulo de la conversacion:", suggestion);
+  if (!title || !title.trim()) return;
+
+  try {
+    const result = await fetchJson(`/api/minichat/conversations/${encodeURIComponent(chatState.conversationId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: title.trim() })
+    });
+
+    el("conversation-title").textContent = result.title;
+    toast(`Conversacion renombrada a "${result.title}".`, "info");
+    await loadConversations();
+  } catch (error) {
+    toast(`No se pudo renombrar: ${error.message}`, "error");
+  }
+}
+
+async function deleteCurrentConversation() {
+  if (!chatState.conversationId) return;
+  if (!window.confirm("Eliminar esta conversacion y sus mensajes?")) return;
+
+  try {
+    const response = await fetch(`/api/minichat/conversations/${encodeURIComponent(chatState.conversationId)}`, {
+      method: "DELETE"
+    });
+    if (!response.ok && response.status !== 404) {
+      const body = await response.json().catch(() => null);
+      throw new Error(body?.error || `HTTP ${response.status}`);
+    }
+
+    toast("Conversacion eliminada.", "info");
+    resetConversation();
+    await loadConversations();
+  } catch (error) {
+    toast(`No se pudo eliminar: ${error.message}`, "error");
+  }
 }
 
 function formatAssistantEnvelope(envelope) {
@@ -378,6 +714,7 @@ function fillModelList(id, items) {
 
 function setBusy(busy) {
   el("send-button").disabled = busy;
+  el("stop-button").hidden = !busy || !chatState.streaming;
 }
 
 function setDeliveryState(value) {

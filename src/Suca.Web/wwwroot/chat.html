@@ -29,14 +29,25 @@
             <button id="refresh-conversations-button" type="button" class="btn">&#8635;</button>
           </div>
         </div>
+        <input id="conversation-search" type="search" placeholder="Buscar conversaciones...">
         <div id="conversation-list" class="conversation-list"></div>
       </div>
 
       <div class="chat-main">
+        <div id="lmstudio-banner" class="service-banner" data-state="checking" hidden>
+          <span class="service-banner-text" id="lmstudio-banner-text">Comprobando LM Studio...</span>
+          <a class="btn" href="http://127.0.0.1:1234" target="_blank" rel="noopener">Abrir LM Studio</a>
+          <button id="lmstudio-retry" type="button" class="btn">Reintentar</button>
+        </div>
+
         <div class="card chat-panel">
           <div class="card-head">
             <h2 id="conversation-title">Nueva conversacion</h2>
-            <span id="delivery-state" class="badge">Idle</span>
+            <div class="btn-row">
+              <span id="delivery-state" class="badge">Idle</span>
+              <button id="rename-conversation-button" type="button" class="btn" hidden>Renombrar</button>
+              <button id="delete-conversation-button" type="button" class="btn btn-danger" hidden>Eliminar</button>
+            </div>
           </div>
           <section id="message-list" class="message-list" aria-live="polite"></section>
           <form id="composer-form" class="composer">
@@ -44,6 +55,7 @@
             <div class="btn-row composer-actions">
               <span id="composer-status" class="muted-note">Listo</span>
               <button id="send-button" type="submit" class="btn btn-primary">Enviar</button>
+              <button id="stop-button" type="button" class="btn btn-danger" hidden>Detener</button>
             </div>
           </form>
         </div>
