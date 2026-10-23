@@ -530,7 +530,9 @@ namespace SUCA_Compressor.Application.Conversion
 
             void ReportProgress(int percent, string phase, string? detail = null)
             {
-                progress.Percent = Math.Clamp(percent, 0, 100);
+                // Monotono: un respaldo interno (optimizador -> camino geometrico)
+                // no debe hacer retroceder la barra en la UI.
+                progress.Percent = Math.Max(progress.Percent, Math.Clamp(percent, 0, 100));
                 progress.Phase = phase;
                 progress.Detail = detail;
                 progress.UpdatedAtUtc = DateTimeOffset.UtcNow;

@@ -211,6 +211,10 @@ namespace SUCA_Compressor
         public bool OptimizeForTarget { get; set; }
         public int OptimizeCandidates { get; set; } = 3;
 
+        // Presupuesto de la busqueda de candidatos: al agotarse se queda con el mejor
+        // encontrado en vez de seguir probando escalas (imagenes grandes).
+        public double OptimizeTimeBudgetSeconds { get; set; } = 20;
+
         // Umbral de legibilidad: por debajo de esto el resultado se marca como riesgoso
         // aunque cumpla el peso (texto/huella pueden volverse ilegibles).
         public double MinLegibilitySsim { get; set; } = 0.90;
@@ -824,9 +828,51 @@ namespace SUCA_Compressor
             a.Mutate(x => x.AutoOrient());
             b.Mutate(x => x.AutoOrient());
 
+            return CompareCore(a, b, report, cancellationToken);
+        }
+
+        /// <summary>
+        /// Igual que <see cref="Compare(string,string)"/> pero reutiliza un original ya
+        /// cargado y orientado. Lo usa el optimizador para no decodificar la imagen
+        /// completa una vez por candidato (con 71 MP eso dominaba el tiempo).
+        /// </summary>
+        public static IntegrityReport Compare(
+            Image<Rgba32> original,
+            string compressedPath,
+            CancellationToken cancellationToken = default,
+            int maxDimension = 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var report = new IntegrityReport
+            {
+                CompressedSha256 = CryptoUtil.Sha256File(compressedPath)
+            };
+
+            using var b = Image.Load<Rgba32>(compressedPath);
+            b.Mutate(x => x.AutoOrient());
+
+            return CompareCore(original, b, report, cancellationToken, maxDimension);
+        }
+
+        private static IntegrityReport CompareCore(
+            Image<Rgba32> a,
+            Image<Rgba32> b,
+            IntegrityReport report,
+            CancellationToken cancellationToken,
+            int maxDimension = 0)
+        {
             // Igualar tamaño para comparar perceptualmente
             int w = Math.Min(a.Width, b.Width);
             int h = Math.Min(a.Height, b.Height);
+
+            // Para puntuar candidatos no hace falta la resolucion completa.
+            if (maxDimension > 0 && Math.Max(w, h) > maxDimension)
+            {
+                double factor = maxDimension / (double)Math.Max(w, h);
+                w = Math.Max(8, (int)Math.Round(w * factor));
+                h = Math.Max(8, (int)Math.Round(h * factor));
+            }
 
             using var a2 = a.Clone(ctx => ctx.Resize(w, h));
             using var b2 = b.Clone(ctx => ctx.Resize(w, h));
@@ -1868,6 +1914,41 @@ namespace SUCA_Compressor
 
         private static double FileSizeKb(string path) => new FileInfo(path).Length / 1024.0;
 
+        /// <summary>Copia la decision con la escala y calidad del candidato a probar.</summary>
+        private static SucaDecision OptimizeVariant(
+            SucaDecision decision,
+            Image<Rgba32> candidate,
+            double scale,
+            int quality) => new()
+            {
+                Hash = decision.Hash,
+                ExtendedHash = decision.ExtendedHash,
+                Scale = scale,
+                Quality = quality,
+                OutputFormat = decision.OutputFormat,
+                UseNearLosslessWebp = decision.UseNearLosslessWebp,
+                NearLosslessQuality = Math.Min(quality, 80),
+                RemoveMetadata = decision.RemoveMetadata,
+                ContentKind = decision.ContentKind,
+                NewWidth = candidate.Width,
+                NewHeight = candidate.Height
+            };
+
+        /// <summary>Diagnostico temporal del optimizador (SUCA_OPT_DEBUG=1).</summary>
+        private static void OptLog(string message)
+        {
+            if (Environment.GetEnvironmentVariable("SUCA_OPT_DEBUG") != "1")
+                return;
+            try
+            {
+                File.AppendAllText(Path.Combine(Path.GetTempPath(), "suca-opt.log"), message + Environment.NewLine);
+            }
+            catch
+            {
+                // el diagnostico nunca debe romper la conversion
+            }
+        }
+
         /// <summary>Notifica progreso sin romper la conversion si el consumidor falla.</summary>
         private static void Report(SucaOptions options, int percent, string phase)
         {
@@ -1904,12 +1985,6 @@ namespace SUCA_Compressor
                 or ImageContentKind.Fingerprint
                 or ImageContentKind.Graphic;
 
-            var ladder = new[] { 1.0, 0.85, 0.72, 0.60, 0.48, 0.38 };
-            int candidateLimit = Math.Clamp(options.OptimizeCandidates, 1, ladder.Length);
-            string probePath = outputPath + ".opt";
-            int iterations = 0;
-            int evaluated = 0;
-
             double? bestScale = null;
             int? bestQuality = null;
             double bestScore = double.MinValue;
@@ -1928,71 +2003,160 @@ namespace SUCA_Compressor
                 source.Metadata.XmpProfile = null;
             }
 
+            // Escalas candidatas relativas al techo. Probar el tamaño completo cuando
+            // el techo es una fraccion del original (ej. 80 KB sobre 18 MB) gastaba
+            // minutos en encodes que nunca caben; la estimacion sqrt(techo/original)
+            // arranca cerca de la escala viable y explora un margen por encima.
+            double inputKb = Math.Max(1.0, new FileInfo(inputPath).Length / 1024.0);
+            double ratio = target / inputKb;
+            double baseScale = Math.Clamp(Math.Sqrt(Math.Max(ratio, 1e-6)), 0.02, 1.0);
+
+            // Nunca explorar por encima del tamaño que fija el perfil: el perfil ya
+            // decidio la dimension maxima util y codificar 21 MP para un techo de
+            // 4 MB costaba mas de un minuto.
+            double profileScale = Math.Clamp(
+                Math.Min(
+                    decision.NewWidth > 0 ? decision.NewWidth / (double)source.Width : 1.0,
+                    decision.NewHeight > 0 ? decision.NewHeight / (double)source.Height : 1.0),
+                0.01,
+                1.0);
+            double cap = Math.Min(1.0, profileScale);
+
+            // El multiplicador se mantiene cerca de la estimacion: con 80 KB sobre
+            // 18 MB, baseScale ~= 0.065 y probar 4x (4.8 MP) volvia a no caber nunca.
+            // Si la estimacion supera el techo del perfil, se explora por debajo de
+            // el en vez de colapsar todos los candidatos en la misma escala.
+            var ladderSteps = new List<double>();
+            foreach (double step in ratio >= 0.9
+                         ? new[] { cap, cap * 0.85, cap * 0.72 }
+                         : new[] { baseScale * 1.7, baseScale * 1.2, baseScale * 0.85 })
+            {
+                double value = Math.Min(step, cap);
+                while (value > 0.01 && ladderSteps.Any(existing => Math.Abs(existing - value) < 1e-9))
+                    value *= 0.85;
+
+                if (value >= 0.01)
+                    ladderSteps.Add(value);
+            }
+
+            double[] ladder = ladderSteps.ToArray();
+
+            // Techo tan pequeño que no deja escala representable: que decida el
+            // camino geometrico en vez de reventar Math.Clamp con un rango vacio.
+            if (ladder.Length == 0)
+                return (false, 0, null, null, 0, null, 0, 0);
+
+            int candidateLimit = Math.Clamp(options.OptimizeCandidates, 1, ladder.Length);
+            string probePath = outputPath + ".opt";
+            int iterations = 0;
+            int evaluated = 0;
+            // Reparte el tramo 55-84 entre los candidatos reales.
+            double slice = 29.0 / candidateLimit;
+            var optimizeWatch = Stopwatch.StartNew();
+            double budgetSeconds = Math.Max(1, options.OptimizeTimeBudgetSeconds);
+            OptLog($"target={target:F1}KB input={inputKb:F1}KB ratio={ratio:F4} base={baseScale:F4} profile={profileScale:F4} cap={cap:F4} ladder=[{string.Join(",", ladder.Select(x => x.ToString("F3")))}] limit={candidateLimit}");
+
             try
             {
                 for (int index = 0; index < candidateLimit; index++)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    Report(options, Math.Min(84, 55 + (index * 10)), "optimizando");
+                    int progressBase = 55 + (int)Math.Round(index * slice);
+                    Report(options, progressBase, "optimizando");
 
-                    double scale = ladder[index];
+                    double scale = Math.Clamp(ladder[index], 0.01, 1.0);
                     int nw = (int)Math.Round(source.Width * scale);
                     int nh = (int)Math.Round(source.Height * scale);
                     if (nw > source.Width) nw = source.Width;
                     if (nh > source.Height) nh = source.Height;
                     if (nw < 64 || nh < 64) break;
 
-                    using var candidate = source.Clone(ctx => ctx.Resize(new ResizeOptions
+                    // Si la escala es la del original no hace falta clonar 71 MP.
+                    bool sameSize = nw == source.Width && nh == source.Height;
+                    using Image<Rgba32>? scaled = sameSize ? null : source.Clone(ctx => ctx.Resize(new ResizeOptions
                     {
                         Mode = ResizeMode.Max,
                         Sampler = KnownResamplers.MitchellNetravali,
                         Size = new Size(nw, nh)
                     }));
+                    Image<Rgba32> candidate = scaled ?? source;
+                    OptLog($"  cand[{index}] scale={scale:F4} {nw}x{nh}");
+                    Report(options, progressBase + (int)Math.Round(slice * 0.2), "optimizando");
 
-                    // Maxima calidad que cabe: de mayor a menor, primera que cumple.
-                    // Nunca por encima de la calidad pedida por el usuario.
+                    // Maxima calidad que cabe: busqueda binaria sobre la escalera
+                    // (el tamaño crece con la calidad). Nunca por encima de la
+                    // calidad pedida por el usuario.
                     int maxQuality = Math.Clamp(options.QualityOverride ?? 95, 1, 95);
+                    int[] rungs = new[] { 92, 84, 80, 76, 66, 55, 45, 35 }.Where(v => v <= maxQuality).ToArray();
                     int chosenQuality = 0;
-                    foreach (int q in new[] { 92, 84, 76, 66, 55, 45, 35 }.Where(v => v <= maxQuality))
+                    if (rungs.Length > 0)
                     {
-                        cancellationToken.ThrowIfCancellationRequested();
-
-                        SaveByDecision(candidate, probePath, new SucaDecision
+                        int lo = 0, hi = rungs.Length - 1, fit = -1;
+                        while (lo <= hi)
                         {
-                            Hash = decision.Hash,
-                            ExtendedHash = decision.ExtendedHash,
-                            Scale = scale,
-                            Quality = q,
-                            OutputFormat = decision.OutputFormat,
-                            UseNearLosslessWebp = decision.UseNearLosslessWebp,
-                            NearLosslessQuality = Math.Min(q, 80),
-                            RemoveMetadata = decision.RemoveMetadata,
-                            ContentKind = decision.ContentKind,
-                            NewWidth = candidate.Width,
-                            NewHeight = candidate.Height
-                        }, cancellationToken);
+                            cancellationToken.ThrowIfCancellationRequested();
+                            int mid = (lo + hi) / 2;
+                            SaveByDecision(candidate, probePath, OptimizeVariant(decision, candidate, scale, rungs[mid]), cancellationToken, fastProbe: true);
+                            iterations++;
+                            double probeKb = FileSizeKb(probePath);
+                            // La prueba usa codificacion rapida: se acepta hasta el techo
+                            // exacto y la verificacion final (BestQuality, mas pequeño)
+                            // confirma el margen. Antes un 0.98 fijo descartaba candidatos
+                            // que fallaban por decimas de KB.
+                            OptLog($"    q={rungs[mid]} probe={probeKb:F1}KB {(probeKb <= target ? "OK" : "no")}");
 
-                        iterations++;
-                        if (FileSizeKb(probePath) <= target * 0.98)
+                            if (probeKb <= target)
+                            {
+                                fit = mid;
+                                hi = mid - 1;
+                            }
+                            else
+                            {
+                                lo = mid + 1;
+                            }
+                        }
+
+                        // La ganadora se codifica con el metodo final (BestQuality); si
+                        // el tamaño exacto se pasa del techo, se baja una marcha.
+                        for (int attempt = 0; fit >= 0 && fit < rungs.Length && attempt < 3; attempt++, fit++)
                         {
-                            chosenQuality = q;
-                            break;
+                            int q = rungs[fit];
+                            SaveByDecision(candidate, probePath, OptimizeVariant(decision, candidate, scale, q), cancellationToken);
+                            iterations++;
+                            double exactKb = FileSizeKb(probePath);
+                            OptLog($"    exact q={q} = {exactKb:F1}KB {(exactKb <= target * 1.02 ? "OK" : "no")}");
+                            if (exactKb <= target * 1.02)
+                            {
+                                chosenQuality = q;
+                                break;
+                            }
                         }
                     }
 
                     if (chosenQuality == 0)
+                    {
+                        Report(options, progressBase + (int)Math.Round(slice * 0.9), "optimizando");
                         continue;
+                    }
 
+                    Report(options, progressBase + (int)Math.Round(slice * 0.75), "optimizando");
                     evaluated++;
 
                     // Medir que tan fiel es esta combinacion respecto al original.
-                    IntegrityReport probe = IntegrityValidator.Compare(inputPath, probePath, cancellationToken);
+                    // Se reutiliza la imagen ya cargada y se limita la resolucion de la
+                    // comparacion: solo sirve para puntuar candidatos entre si.
+                    IntegrityReport probe = IntegrityValidator.Compare(
+                        source, probePath, cancellationToken, maxDimension: 1600);
 
                     double score = legibilityFirst
                         ? (0.65 * probe.EdgeRetention) + (0.35 * probe.SsimLite)
                         : (0.70 * probe.SsimLite) + (0.30 * probe.EdgeRetention);
 
-                    if (score > bestScore)
+                    // A igualdad de score se prefiere la mayor resolucion: sin este
+                    // desempate una imagen plana elegia una escala menor sin ganar nada.
+                    bool better = score > bestScore + 0.002
+                        || (Math.Abs(score - bestScore) <= 0.002 && candidate.Width > bestWidth);
+                    if (better)
                     {
                         bestScore = score;
                         bestScale = scale;
@@ -2002,6 +2166,11 @@ namespace SUCA_Compressor
                         bestHeight = candidate.Height;
                         File.Copy(probePath, outputPath, overwrite: true);
                     }
+
+                    // Con al menos un candidato valido, el presupuesto corta la
+                    // exploracion en imagenes grandes sin dejar la UI esperando.
+                    if (evaluated > 0 && optimizeWatch.Elapsed.TotalSeconds >= budgetSeconds)
+                        break;
                 }
             }
             finally
@@ -2026,7 +2195,12 @@ namespace SUCA_Compressor
             }
         }
 
-        private static void SaveByDecision(Image<Rgba32> image, string outputPath, SucaDecision decision, CancellationToken cancellationToken)
+        private static void SaveByDecision(
+            Image<Rgba32> image,
+            string outputPath,
+            SucaDecision decision,
+            CancellationToken cancellationToken,
+            bool fastProbe = false)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -2037,7 +2211,9 @@ namespace SUCA_Compressor
                     {
                         FileFormat = WebpFileFormatType.Lossy,
                         Quality = decision.Quality,
-                        Method = WebpEncodingMethod.BestQuality,
+                        // BestQuality es muy lento en imagenes grandes: las pruebas de
+                        // tamaño usan Default y solo la ganadora se codifica final.
+                        Method = fastProbe ? WebpEncodingMethod.Default : WebpEncodingMethod.BestQuality,
                         NearLossless = decision.UseNearLosslessWebp,
                         NearLosslessQuality = decision.NearLosslessQuality
                     };

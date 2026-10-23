@@ -175,16 +175,38 @@ Busca la **mejor combinacion posible** dentro del techo en vez de quedarse con l
 del perfil:
 
 ```
-escalas candidatas: 1.00, 0.85, 0.72, 0.60, 0.48, 0.38   (las N primeras, N = OptimizeCandidates)
+s0  = sqrt(techo_kb / original_kb)                  // escala que probablemente cabe
+cap = min(perfil.NewWidth/original.Width,           // nunca superar lo que fija el perfil
+          perfil.NewHeight/original.Height)
+escalas candidatas (N = OptimizeCandidates, 3 por defecto):
+    techo >= 90% del original -> {cap, 0.85*cap, 0.72*cap}
+    si no                     -> {1.7*s0, 1.2*s0, 0.85*s0}, acotadas a cap
+    (si dos coinciden, la siguiente se reduce x0.85 para no repetir escala)
+
 para cada escala:
-    calidad: probar 92, 84, 76, 66, 55, 45, 35 y quedarse con la primera que cabe
-    si ninguna cabe -> descartar la escala
-    medir integridad del candidato (SSIM, bordes)
+    busqueda BINARIA de la maxima calidad que cabe sobre {92, 84, 80, 76, 66, 55, 45, 35}
+        limitada a la calidad pedida por el usuario (QualityOverride)
+    las pruebas usan WebP con metodo Default (rapido); la ganadora se recodifica con
+        BestQuality y, si el tamaño exacto pasa el techo x1.02, baja una marcha (max 3)
+    si ninguna calidad cabe -> descartar la escala
+    medir integridad del candidato a <= 1600 px (solo para puntuar; el informe final
+        se calcula a resolucion completa)
     puntuacion (score):
         documento / UI / huella / grafico -> 0.65 * bordes + 0.35 * SSIM   (legibilidad primero)
         foto                              -> 0.70 * SSIM  + 0.30 * bordes
-elegir el candidato con mayor score
+
+elegir el candidato con mayor score; a igualdad (+-0.002) gana la mayor resolucion
+presupuesto: OptimizeTimeBudgetSeconds (20 s); con al menos un candidato valido se corta
 ```
+
+Decisiones de coste (medidas con una foto de 8666x8200, 71 MP):
+
+- Probar la escala 1.0 cuando el techo es una fraccion del original gastaba minutos en
+  encodes que nunca caben; `s0` arranca cerca de la escala viable.
+- La escalera de calidad es binaria (<= 3 pruebas por escala) en vez de lineal (hasta 7).
+- La comparacion de integridad de los candidatos reutiliza el original ya cargado y se
+  limita a 1600 px; antes decodificaba 71 MP por candidato.
+- El presupuesto de 20 s impide que un techo grande dispare la exploracion.
 
 El resultado reporta `optimized`, `optimizedScale`, `optimizedQuality`,
 `candidatesEvaluated` y `qualityScore`. Si ningun candidato cabe, cae al modo simple.
@@ -201,22 +223,24 @@ justifica un texto ilegible.
 
 ### Mediciones reales
 
-Foto sintetica 2000x3000 (17 MB), techo 80 KB:
+Foto real `8666x8200` (71 MP, 18.6 MB, `q80`, motor SUCA):
 
-| Modo | Salida | Dimensiones | SSIM | Score |
-| --- | --- | --- | --- | --- |
-| simple | 47.6 KB | 1016x1524 | 0.9980 | — |
-| **optimizado** | 72.3 KB | **1440x2160** | 0.9961 | 0.3489 |
+| Techo | Salida | Escala | Calidad | Tiempo | SSIM | Legible |
+| --- | --- | --- | --- | --- | --- | --- |
+| 80 KB | 76.2 KB | 0.055 (477x451) | q76 | 15 s | 0.9913 | si |
+| 500 KB | 463.1 KB | 0.138 (1192x1128) | q76 | 22 s | 0.9932 | si |
+| 2000 KB | 1607.5 KB | 0.250 (2166x2050) | q80 | 27 s | 0.9951 | si |
 
-Documento sintetico 1600x2200 (10 MB), techo 60 KB:
+Documento sintetico 2000x2600 (467 KB), techo 100 KB:
 
-| Modo | Salida | Dimensiones | Calidad | Bordes | Legible |
+| Salida | Escala | Calidad | Tiempo | SSIM | Legible |
 | --- | --- | --- | --- | --- | --- |
-| simple | 13.4 KB | 1152x1584 | — | 1.05 | si |
-| **optimizado** | 19.1 KB | **1360x1870** | q92 | 1.07 | si |
+| 91.5 KB | 0.394 (787x1023) | q35 | 5 s | 0.9866 | si |
 
-El modo optimizado gasta mas margen del techo a cambio de **mas resolucion y calidad**:
-en la foto, +41% de pixeles con el mismo limite de peso.
+El modo optimizado gasta mas margen del techo a cambio de **mas resolucion y calidad**.
+Antes de esta version el mismo caso de 80 KB no terminaba en 90 s; ahora el analisis
+(~10 s, matriz de grises a resolucion completa) domina el tiempo y el optimizador
+aporta el resto. El progreso se reporta por etapa y por candidato.
 
 ## 8. Metricas de salida
 

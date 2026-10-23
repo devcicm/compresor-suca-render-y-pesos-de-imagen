@@ -177,6 +177,13 @@ La solicitud recibe `sourceDirectory`, `semanticIndexPath`, `recursive`, `chunkS
 
 LM Studio debe estar ejecutando una API compatible con OpenAI, normalmente en `http://127.0.0.1:1234`. Indique en cada solicitud los modelos de chat y embeddings que esten cargados localmente; consulte primero `GET /api/lmstudio/models`.
 
+## Depuracion del optimizador
+
+Con `SUCA_OPT_DEBUG=1`, el optimizador escribe `%TEMP%\suca-opt.log` con el techo, la
+escala estimada, el tope del perfil, las escalas candidatas y el tamaño de cada prueba
+(`probe`/`exact`). Sirve para explicar por que un techo no encontro candidato sin tocar
+codigo. Sin esa variable no se escribe nada.
+
 ## Depuracion y ciclo de vida
 
 - `GET /api/observability/snapshot` resume operaciones, fallos, cancelaciones y jobs activos.

@@ -19,6 +19,19 @@ Todavia no hay release publicada: este es el estado actual del codigo de `main`.
   aborta la inicializacion de la vista.
 - CI comprueba el contrato del selector (label + input sin `hidden`).
 
+**Optimizador bajo techo: rapido y sin aparentes bloqueos**
+- La escalera de candidatos es **adaptativa**: arranca en `sqrt(techo/original)` y nunca
+  supera el tamaño que fija el perfil. Antes, con 80 KB sobre una foto de 71 MP, probaba
+  escalas de 21 MP que nunca caben y podia tardar minutos en el 80 %.
+- Busqueda **binaria** de calidad (<= 3 pruebas por escala) sobre `{92,84,80,76,66,55,45,35}`,
+  con `WebpEncodingMethod.Default` para estimar y `BestQuality` solo para la ganadora.
+- La integridad de los candidatos reutiliza el original ya cargado y se limita a 1600 px
+  (el informe final sigue a resolucion completa); presupuesto `OptimizeTimeBudgetSeconds`
+  de 20 s; desempate por mayor resolucion a igualdad de score.
+- El porcentaje de progreso es **monotono**: el respaldo geometrico ya no hace retroceder
+  la barra. Medido con 71 MP: 80 KB en 15 s, 500 KB en 22 s, 2000 KB en 27 s, documento
+  de 467 KB a 100 KB en 5 s, todos con el techo cumplido y legibles.
+
 **Herramientas de desarrollo**
 - Target `StopRunningSuca` en el `.csproj`: cierra la instancia abierta antes de compilar
   (Windows bloquea el `.exe` y MSBuild fallaba con `MSB3027`/`MSB3021`). `dotnet build` y
