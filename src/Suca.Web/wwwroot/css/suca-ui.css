@@ -1740,3 +1740,26 @@ label[data-invalid="true"] select {
   gap: var(--space-2);
   font-size: var(--text-sm);
 }
+
+/* --- Perfil SUCA A-D --- */
+.profile-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.profile-row input {
+  width: 52px;
+  font: inherit;
+  text-align: center;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  padding: 6px 4px;
+  background: var(--color-panel-strong);
+  color: var(--color-ink);
+}
+
+.profile-row .profile-dot {
+  color: var(--color-muted);
+  font-weight: 700;
+}

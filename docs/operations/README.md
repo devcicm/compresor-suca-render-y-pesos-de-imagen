@@ -83,8 +83,7 @@ POST /api/web/orders
 }
 ```
 
-- `items` (rutas explicitas) **o** `sourceDirectory` (descubrimiento con filtros); maximo 500 imagenes por orden.
-- Respuesta `202` con `orderId`, `correlationId` y `statusUrl`.
+- `items` (rutas explicitas) **o** `sourceDirectory` (descubrimiento con filtros); maximo 500 imagenes por orden.- Respuesta `202` con `orderId`, `correlationId` y `statusUrl`.
 - Seguimiento y control: `GET /api/web/orders`, `GET /api/web/orders/{id}`, `POST /api/web/orders/{id}/pause|resume|cancel` y `GET /api/web/orders/{id}/events` (trazabilidad por correlacion).
 - Cada item sigue la maquina de estados `Pending → Running → Completed/Failed/Cancelled/Interrupted` con `stateHistory` persistido; al reiniciar el servidor, los items en vuelo quedan `Interrupted` con codigo `server-restart`.
 - `output.mode = "directory"` copia ademas los convertidos a la carpeta indicada.
@@ -139,7 +138,8 @@ Los grupos REST principales son:
 - `GET /api/lmstudio/health` informa si el servicio externo responde (`available`/`unavailable` con `baseUrl` y detalle) para que la UI muestre su banner; `GET /api/lmstudio/models` devuelve **503** con detalle cuando LM Studio esta caido.
 - `POST /api/minichat/chat/stream` emite la respuesta en **SSE** (`text/event-stream`): un `data:` por linea con eventos `Started`, `Context` (citas RAG), `Delta`, `Completed` y `Error`, terminando en `data: [DONE]`. Cancelar la peticion HTTP detiene la generacion en LM Studio y el mensaje se persiste con estado `Failed`.
 - Gestion de conversaciones: `GET /api/minichat/conversations?search=` (busca en titulo y mensajes), `PATCH /api/minichat/conversations/{id}` (body `{"title":"..."}`) y `DELETE /api/minichat/conversations/{id}` (elimina tambien las colas inbox/outbox).
-- `POST /api/web/convert` (multipart con `engine`, `format`, `quality`, `maxWidth`, `maxHeight`, `removeMetadata`, `collection`, `correlationId`), `GET /api/web/images[?collection=&page=&pageSize=]`, `GET /api/web/images/{id}/file`, `GET /api/web/images/{id}/base64` y `DELETE /api/web/images/{id}` para el servicio de conversion, galeria y recuperacion base64.
+- `POST /api/web/convert` (multipart con `engine`, `format`, `quality`, `maxWidth`, `maxHeight`, `removeMetadata`, `collection`, `correlationId`, y `profileA|profileB|profileC|profileD` de 0 a 9 — los cuatro juntos, si no se aplica el perfil por defecto 0-1-1-3), `GET /api/web/images[?collection=&page=&pageSize=]`, `GET /api/web/images/{id}/file`, `GET /api/web/images/{id}/base64` y `DELETE /api/web/images/{id}` para el servicio de conversion, galeria y recuperacion base64.
+- Las formulas del motor SUCA (matriz de factorizacion, hash, calidad, peso mosca, bpp/ratio e integridad) estan documentadas en [docs/math/suca-formulas.md](../math/suca-formulas.md). El perfil A-D tambien viaja en el payload JSON del tool MCP `convert` (`"profile": { "a": 0, "b": 1, "c": 1, "d": 3 }`).
 - Acciones en lote de la galeria: `POST /api/web/images/export` (body `{"ids":[...],"variant":"converted"}`) devuelve un ZIP (`application/zip`, nombres deduplicados; con `variant=original` los archivos van en la subcarpeta `original/`) y `POST /api/web/images/collection` (body `{"ids":[...],"collection":"nombre"}`) mueve varias imagenes registrando la coleccion destino. Maximo 500 ids por peticion.
 - `POST /api/web/orders` y sus endpoints de estado/control (ver seccion de ordenes); `GET /api/web/folders?path=` para el explorador de carpetas del servidor y `POST /api/web/orders/preview` para validar antes de convertir.
 - `GET /api/web/collections`, `POST /api/web/collections`, `PUT /api/web/collections/{name}`, `GET /api/web/collections/{name}/images`, `PUT /api/web/images/{id}/collection` y `DELETE /api/web/collections/{name}` para el CRUD de colecciones.

@@ -42,6 +42,20 @@
       </div>
       <div class="grid-options">
         <label class="field">
+          <span class="field-label">Perfil SUCA (A·B·C·D)
+            <span class="tip-dot" data-tip-title="Perfil SUCA" data-tip="Cuatro digitos de 0 a 9 que alimentan la matriz de factorizacion del kernel (M=[[3,2],[1,4]]). Cada combinacion produce una escala y una calidad deterministas. Por defecto 0-1-1-3. Dejalo vacio para usar el perfil del kernel." tabindex="0" role="note">?</span>
+          </span>
+          <span class="profile-row">
+            <input id="profile-a" type="number" min="0" max="9" step="1" placeholder="0" aria-label="Perfil A">
+            <span class="profile-dot">·</span>
+            <input id="profile-b" type="number" min="0" max="9" step="1" placeholder="1" aria-label="Perfil B">
+            <span class="profile-dot">·</span>
+            <input id="profile-c" type="number" min="0" max="9" step="1" placeholder="1" aria-label="Perfil C">
+            <span class="profile-dot">·</span>
+            <input id="profile-d" type="number" min="0" max="9" step="1" placeholder="3" aria-label="Perfil D">
+          </span>
+        </label>
+        <label class="field">
           <span class="field-label">Motor
             <span class="tip-dot" data-tip-title="Motor" data-tip="SUCA: pipeline completo con perfil A-D, peso mosca y reporte de integridad (primera opcion). Directo: re-encodado con ImageSharp, mas rapido y predecible." tabindex="0" role="note">?</span>
           </span>

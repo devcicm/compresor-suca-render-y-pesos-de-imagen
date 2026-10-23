@@ -1,6 +1,7 @@
 # Documentacion de SUCA
 
 - [Arquitectura](architecture/README.md): limites de contextos, estructura de Application, servicio de conversion, ordenes y estado de la migracion.
+- [Matematicas](math/suca-formulas.md): las formulas del kernel SUCA (senales visuales, factorizacion A-D, calidad, peso mosca, bpp/ratio e integridad).
 - [Operacion](operations/README.md): inicio del host, shell SUCA Studio, conversion y ordenes orquestadas, colecciones, REST, MCP, RAG, LM Studio y diagnostico.
 - [Chat](../src/Suca.Chat/README.md): conversaciones persistentes y entrega confiable (integrado al shell como vista Chat).
 - [Web](../src/Suca.Web/README.md): shell multipage, aside de servicios colapsable, convenciones CSS y tooltips.

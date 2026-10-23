@@ -120,12 +120,29 @@ namespace SUCA_Compressor
                 {
                     var feature = context.Features.Get<IExceptionHandlerFeature>();
                     var ex = feature?.Error;
+
+                    // Cuerpo demasiado grande: 413 limpio en vez de 500 con stack.
+                    if (ex is Microsoft.AspNetCore.Server.Kestrel.Core.BadHttpRequestException bad
+                        && bad.Message.Contains("Request body too large", StringComparison.OrdinalIgnoreCase))
+                    {
+                        context.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+                        context.Response.ContentType = "application/json";
+                        await context.Response.WriteAsJsonAsync(new
+                        {
+                            error = "El cuerpo de la peticion excede el limite configurado (web.maxUploadMegabytes)."
+                        }, cancellationToken);
+                        return;
+                    }
+
+                    // El detalle (stack) va al log del servidor, nunca al cliente:
+                    // en un repo publico es fuga de informacion.
+                    app.Logger.LogError(ex, "Unhandled error on {Path}", context.Request.Path);
+
                     context.Response.StatusCode = StatusCodes.Status500InternalServerError;
                     context.Response.ContentType = "application/json";
                     await context.Response.WriteAsJsonAsync(new
                     {
-                        error = ex?.Message ?? "Unhandled error",
-                        detail = ex?.ToString()
+                        error = "Error interno no esperado. Revise el log del servidor."
                     }, cancellationToken);
                 });
             });
@@ -478,6 +495,29 @@ namespace SUCA_Compressor
                     Collection = FormValue(form, "collection", ""),
                     CorrelationId = form["correlationId"].ToString()
                 };
+
+                // Perfil SUCA A-D (0-9): alimenta la matriz de factorizacion del kernel.
+                // Si alguno falta, se usa el perfil por defecto del kernel (0,1,1,3).
+                int? pa = FormInt(form, "profileA");
+                int? pb = FormInt(form, "profileB");
+                int? pc = FormInt(form, "profileC");
+                int? pd = FormInt(form, "profileD");
+
+                if (pa.HasValue || pb.HasValue || pc.HasValue || pd.HasValue)
+                {
+                    if (pa is null || pb is null || pc is null || pd is null
+                        || pa is < 0 or > 9 || pb is < 0 or > 9
+                        || pc is < 0 or > 9 || pd is < 0 or > 9)
+                    {
+                        return Results.BadRequest(new
+                        {
+                            error = "El perfil SUCA requiere profileA, profileB, profileC y profileD entre 0 y 9.",
+                            errorCode = ConversionErrorCodes.InvalidFormat
+                        });
+                    }
+
+                    command.Profile = new SucaProfile { A = pa.Value, B = pb.Value, C = pc.Value, D = pd.Value };
+                }
 
                 int timeoutSeconds = Math.Max(5, effective.Web.ConvertTimeoutSeconds ?? 180);
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(LinkToken(http, ct));
@@ -1242,6 +1282,39 @@ namespace SUCA_Compressor
 
             if (payload.TryGetProperty("removeMetadata", out JsonElement metadataElement) && metadataElement.ValueKind is JsonValueKind.True or JsonValueKind.False)
                 command.RemoveMetadata = metadataElement.GetBoolean();
+
+            // Perfil SUCA A-D (0-9): alimenta la matriz de factorizacion del kernel.
+            if (payload.TryGetProperty("profile", out JsonElement profileElement)
+                && profileElement.ValueKind == JsonValueKind.Object)
+            {
+                int? ReadDigit(string name)
+                {
+                    if (!profileElement.TryGetProperty(name, out JsonElement element)) return null;
+                    if (element.ValueKind != JsonValueKind.Number) return null;
+                    int value = element.GetInt32();
+                    return value is >= 0 and <= 9 ? value : null;
+                }
+
+                int? a = ReadDigit("a");
+                int? b = ReadDigit("b");
+                int? c = ReadDigit("c");
+                int? d = ReadDigit("d");
+
+                if (a.HasValue && b.HasValue && c.HasValue && d.HasValue)
+                {
+                    command.Profile = new SucaProfile { A = a.Value, B = b.Value, C = c.Value, D = d.Value };
+                }
+                else if (profileElement.TryGetProperty("a", out _)
+                         || profileElement.TryGetProperty("b", out _)
+                         || profileElement.TryGetProperty("c", out _)
+                         || profileElement.TryGetProperty("d", out _))
+                {
+                    return Results.BadRequest(new
+                    {
+                        error = "El perfil SUCA requiere profile.a, profile.b, profile.c y profile.d entre 0 y 9."
+                    });
+                }
+            }
 
             var settings = services.GetRequiredService<ISucaSettingsService>();
             var effective = settings.GetEffective();

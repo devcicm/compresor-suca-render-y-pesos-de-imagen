@@ -9,6 +9,15 @@ Todavia no hay release publicada: este es el estado actual del codigo de `main`.
 
 ### Anadido
 
+**Motor SUCA documentado y configurable**
+- Nuevo `docs/math/suca-formulas.md`: las formulas completas del kernel (senales visuales,
+  matriz de factorizacion A-D, hash SUCA, calidad base, peso mosca, bpp/ratio, integridad
+  perceptual y mapa de pesos 8x8) con ejemplo numerico paso a paso.
+- **Perfil SUCA A-D** configurable en la conversion: `POST /api/web/convert` acepta
+  `profileA|profileB|profileC|profileD` (0-9, los cuatro juntos) y el tool MCP `convert`
+  acepta `"profile": { "a": 0, "b": 1, "c": 1, "d": 3 }`. La UI del Compresor anade los
+  cuatro digitos con tooltip. Sin perfil se usa el 0-1-1-3 del kernel.
+
 **Servicio de conversion**
 - Patron `Result`/`Result<T>` con codigos de error tipados (`ConversionErrorCodes`) para
   que los errores esperados no viajen como excepciones.
@@ -46,6 +55,10 @@ Todavia no hay release publicada: este es el estado actual del codigo de `main`.
 
 ### Corregido
 
+- **Fuga de informacion en errores 500**: el manejador global devolvia `detail` con el stack
+  trace completo. Ahora el stack va al log del servidor y la respuesta es un mensaje limpio.
+- **Cuerpo demasiado grande devolvia 500**: `BadHttpRequestException` del limite de subida
+  ahora responde **413** con mensaje claro.
 - Reintentos en el commit atomico de archivos cuando `File.Replace` falla de forma
   transitoria.
 - Imagenes no soportadas devuelven `422 unsupported-image` en vez de un error interno.
@@ -58,6 +71,14 @@ Todavia no hay release publicada: este es el estado actual del codigo de `main`.
 - `record-not-found` y `collection-not-found` responden `404` en vez de `400`; los
   duplicados de coleccion responden `409`.
 - Las ordenes de consola muestran su `correlationId` para poder rastrearlas.
+
+### Cambiado
+
+- **SixLabors.ImageSharp fijado a 2.1.13** (Apache-2.0, gratuita y compatible con la
+  licencia MIT): la linea 3.x exige licencia comercial de Six Labors en compilacion y sus
+  versiones flotantes (`3.*`) rompian la CI y la reproducibilidad. Se elimino
+  `SixLabors.ImageSharp.Drawing` (no se usaba). Los avisos de seguridad pendientes de la
+  serie 2.x estan documentados y justificados en `SECURITY.md`.
 
 ### Seguridad y privacidad
 

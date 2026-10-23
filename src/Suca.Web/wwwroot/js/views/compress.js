@@ -758,6 +758,15 @@ function buildForm(item, correlation) {
   form.append("removeMetadata", el("remove-metadata").checked ? "true" : "false");
   form.append("correlationId", correlation);
 
+  // Perfil SUCA A-D: solo se envia si los cuatro digitos estan completos.
+  const profile = readProfileInputs();
+  if (profile) {
+    form.append("profileA", profile.a);
+    form.append("profileB", profile.b);
+    form.append("profileC", profile.c);
+    form.append("profileD", profile.d);
+  }
+
   const collection = ov.collection ?? el("collection").value.trim();
   if (collection) form.append("collection", collection);
 
@@ -767,6 +776,19 @@ function buildForm(item, correlation) {
   if (maxHeight) form.append("maxHeight", maxHeight);
 
   return form;
+}
+
+/* Lee los cuatro digitos del perfil; null si estan incompletos o fuera de 0-9. */
+function readProfileInputs() {
+  const ids = ["profile-a", "profile-b", "profile-c", "profile-d"];
+  const values = ids.map((id) => el(id)?.value ?? "");
+
+  if (values.some((value) => value.trim() === "")) return null;
+
+  const digits = values.map((value) => Number(value));
+  if (digits.some((value) => !Number.isInteger(value) || value < 0 || value > 9)) return null;
+
+  return { a: digits[0], b: digits[1], c: digits[2], d: digits[3] };
 }
 
 function toggleSelectAll() {
