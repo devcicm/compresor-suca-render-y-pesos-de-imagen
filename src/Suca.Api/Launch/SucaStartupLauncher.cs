@@ -74,6 +74,11 @@ namespace SUCA_Compressor
             Console.WriteLine("  dotnet run --project \"ConsoleApp suca compress.csproj\" -- --mode console --input <imagen> [--output <carpeta>]");
             Console.WriteLine("  dotnet run --project \"ConsoleApp suca compress.csproj\" -- --mode web [--urls http://127.0.0.1:5077]");
             Console.WriteLine();
+            Console.WriteLine("El modo web publica por defecto http://127.0.0.1:5077:");
+            Console.WriteLine("  Backend REST/MCP  : http://127.0.0.1:5077  (salud en /health)");
+            Console.WriteLine("  Frontend Studio   : http://127.0.0.1:5077/studio");
+            Console.WriteLine("  Frontend Minichat : http://127.0.0.1:5077/minichat/");
+            Console.WriteLine();
             Console.WriteLine("Aliases: console, --console, web, --web, serve y --rest.");
             Console.WriteLine("Sin argumentos, el launcher muestra una ventana para elegir el modo.");
         }

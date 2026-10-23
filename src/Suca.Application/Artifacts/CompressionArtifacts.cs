@@ -60,7 +60,9 @@ namespace SUCA_Compressor.Application.Artifacts
             if (!string.IsNullOrWhiteSpace(options.VisualRagIndexPath) && embedding is not null)
             {
                 string indexPath = options.VisualRagIndexPath;
-                await using var lease = await _keyedLock.AcquireAsync(indexPath, cancellationToken).ConfigureAwait(false);
+                // Compound key: AtomicFileStore acquires the index key itself inside
+                // WriteAllTextAtomicAsync, and AsyncKeyedLock is not reentrant.
+                await using var lease = await _keyedLock.AcquireAsync(indexPath + "#compound", cancellationToken).ConfigureAwait(false);
 
                 LocalRagIndex index = LocalRagIndex.Load(indexPath);
                 index.Add(new RagItem

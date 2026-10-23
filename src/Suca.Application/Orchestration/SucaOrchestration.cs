@@ -116,6 +116,7 @@ namespace SUCA_Compressor
         public string Level { get; set; } = "info";
         public string Message { get; set; } = "";
         public string? CorrelationId { get; set; }
+        public string? JobId { get; set; }
     }
 
     public sealed class RuntimeSnapshot
@@ -344,10 +345,27 @@ namespace SUCA_Compressor
             await using var lease = await _keyedLock.AcquireAsync(NormalizeKey(path), cancellationToken).ConfigureAwait(false);
             await File.WriteAllTextAsync(tempPath, contents, Encoding.UTF8, cancellationToken).ConfigureAwait(false);
 
-            if (File.Exists(path))
-                File.Replace(tempPath, path, null);
-            else
-                File.Move(tempPath, path);
+            // File.Replace can transiently fail on Windows when another handle
+            // (reader, indexer, antivirus) holds the destination open. Retry.
+            for (int attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    if (File.Exists(path))
+                        File.Replace(tempPath, path, null);
+                    else
+                        File.Move(tempPath, path);
+                    break;
+                }
+                catch (IOException) when (attempt < 5)
+                {
+                    await Task.Delay(40 * attempt, cancellationToken).ConfigureAwait(false);
+                }
+                catch (UnauthorizedAccessException) when (attempt < 5)
+                {
+                    await Task.Delay(40 * attempt, cancellationToken).ConfigureAwait(false);
+                }
+            }
         }
 
         public async Task AppendLineAsync(string path, string line, CancellationToken cancellationToken = default)

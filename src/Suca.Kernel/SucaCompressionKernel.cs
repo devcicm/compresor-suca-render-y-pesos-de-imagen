@@ -28,6 +28,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text.Json.Nodes;
 
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -39,6 +40,9 @@ using SixLabors.ImageSharp.Metadata.Profiles.Exif;
 using SUCA_Compressor.Kernel;
 using SUCA_Compressor.Shared.Imaging;
 using SUCA_Compressor.Shared.Math;
+using Microsoft.Extensions.Logging.Abstractions;
+using SUCA_Compressor.Application.Settings;
+using SUCA_Compressor.Application.Conversion;
 using Image = SixLabors.ImageSharp.Image;
 using Size = SixLabors.ImageSharp.Size;
 
@@ -1832,6 +1836,15 @@ namespace SUCA_Compressor
         {
             Console.OutputEncoding = Encoding.UTF8;
 
+            if (HasSettingFlag(args, "--settings", "settings"))
+                return RunSettingsView();
+
+            if (HasSettingFlag(args, "--settings-edit", "settings-edit"))
+                return await RunSettingsEditAsync();
+
+            if (WantsBatch(args))
+                return await RunBatchAsync(args);
+
             SucaLaunchSelection selection;
             try
             {
@@ -1886,6 +1899,12 @@ namespace SUCA_Compressor
             }
 
             string? carpetaSalida = ReadOption(args, "--output");
+            SucaSettings effectiveSettings = LoadEffectiveSettings();
+            PrintServicesBanner(effectiveSettings);
+
+            if (string.IsNullOrWhiteSpace(carpetaSalida) && !string.IsNullOrWhiteSpace(effectiveSettings.Console.OutputDirectory))
+                carpetaSalida = effectiveSettings.Console.OutputDirectory;
+
             if (string.IsNullOrWhiteSpace(carpetaSalida))
             {
                 string inputDirectory = Path.GetDirectoryName(Path.GetFullPath(ruta)) ?? Environment.CurrentDirectory;
@@ -1906,8 +1925,8 @@ namespace SUCA_Compressor
 
             var options = new SucaOptions
             {
-                PreferredFormat = SucaOutputFormat.Webp,
-                RemoveMetadata = true,
+                PreferredFormat = ResolvePreferredFormat(effectiveSettings.Conversion.Format),
+                RemoveMetadata = effectiveSettings.Conversion.RemoveMetadata ?? true,
                 AllowLossy = true,
                 PreserveSmallImages = true,
                 EnablePesoMosca = true,
@@ -1919,7 +1938,7 @@ namespace SUCA_Compressor
             };
 
             using var cts = new CancellationTokenSource();
-            cts.CancelAfter(ReadTimeout(args));
+            cts.CancelAfter(ReadTimeout(args, effectiveSettings.Console.TimeoutSeconds ?? 180));
             ConsoleCancelEventHandler cancelHandler = (_, eventArgs) =>
             {
                 eventArgs.Cancel = true;
@@ -2046,13 +2065,279 @@ namespace SUCA_Compressor
             return null;
         }
 
-        private static TimeSpan ReadTimeout(string[] args)
+        private static TimeSpan ReadTimeout(string[] args, int fallbackSeconds)
         {
             string? value = ReadOption(args, "--timeout-seconds");
             if (int.TryParse(value, out int seconds) && seconds > 0)
                 return TimeSpan.FromSeconds(seconds);
 
-            return TimeSpan.FromMinutes(3);
+            return TimeSpan.FromSeconds(Math.Max(5, fallbackSeconds));
+        }
+
+        private static void PrintServicesBanner(SucaSettings settings)
+        {
+            string webUrl = Environment.GetEnvironmentVariable("SUCA_URLS") is { Length: > 0 } configured
+                ? configured.TrimEnd('/')
+                : SucaRestHost.DefaultWebUrl;
+            string lmStudio = settings.LmStudio.BaseUrl ?? "http://127.0.0.1:1234/v1";
+
+            Console.WriteLine();
+            Console.WriteLine("==========================================================================");
+            Console.WriteLine(" SUCA servicios");
+            Console.WriteLine("  Modo actual: consola (compresion local, sin servidor HTTP).");
+            Console.WriteLine("  Servicios que publica el modo web:");
+            Console.WriteLine($"    Backend (REST + MCP)    : {webUrl}");
+            Console.WriteLine($"      Salud                 : {webUrl}/health");
+            Console.WriteLine($"      Observabilidad        : {webUrl}/api/observability/snapshot");
+            Console.WriteLine($"      Jobs                  : {webUrl}/api/jobs");
+            Console.WriteLine($"    Frontend SUCA Studio    : {webUrl}/studio   (conversion, galeria, ajustes)");
+            Console.WriteLine($"    Frontend Minichat       : {webUrl}/minichat/   (chat LLM + RAG)");
+            Console.WriteLine($"    Catalogo MCP            : {webUrl}/mcp/tools y {webUrl}/mcp/resources");
+            Console.WriteLine($"  Servicio externo LM Studio: {lmStudio} (requerido para chat/RAG/vision)");
+            Console.WriteLine($"  Para iniciar los servicios web: --mode web --urls {webUrl}");
+            Console.WriteLine("==========================================================================");
+            Console.WriteLine();
+        }
+
+        private static SucaOutputFormat ResolvePreferredFormat(string? format)
+        {
+            if (SucaFormatConverter.TryParseFormat(format, out ConversionTargetFormat parsed))
+            {
+                return parsed switch
+                {
+                    ConversionTargetFormat.Jpeg => SucaOutputFormat.Jpeg,
+                    ConversionTargetFormat.Png => SucaOutputFormat.Png,
+                    _ => SucaOutputFormat.Webp
+                };
+            }
+
+            return SucaOutputFormat.Webp;
+        }
+
+        private static bool HasSettingFlag(string[] args, params string[] names) =>
+            args.Any(arg => names.Any(name => string.Equals(arg, name, StringComparison.OrdinalIgnoreCase)));
+
+        private static bool HasFlag(string[] args, string name) =>
+            args.Any(arg => string.Equals(arg, name, StringComparison.OrdinalIgnoreCase));
+
+        private static bool WantsBatch(string[] args)
+        {
+            if (HasSettingFlag(args, "--batch") || ReadOption(args, "--order") is not null)
+                return true;
+
+            string? input = ReadOption(args, "--input");
+            return !string.IsNullOrWhiteSpace(input) && Directory.Exists(input.Trim().Trim('"'));
+        }
+
+        private static async Task<int> RunBatchAsync(string[] args)
+        {
+            var options = ConsoleConversionRunner.BuildOptionsFromArgs(args);
+            if (options.OrderFile is null && options.InputDirectory is null && options.Files.Count == 0)
+            {
+                Console.Error.WriteLine("El modo lote requiere --input <carpeta>, --order <archivo.json> o varios archivos.");
+                return 2;
+            }
+
+            if (options.Engine is null || options.Format is null || !options.Quality.HasValue)
+            {
+                SucaSettings effective = LoadEffectiveSettings();
+                options.Engine ??= effective.Conversion.Engine;
+                options.Format ??= effective.Conversion.Format;
+                options.Quality ??= effective.Conversion.Quality;
+                options.Parallelism = ReadOption(args, "--parallel") is null
+                    ? effective.Console.Parallelism ?? options.Parallelism
+                    : options.Parallelism;
+                if (!HasFlag(args, "--recursive") && ReadOption(args, "--input") is not null)
+                    options.Recursive = effective.Console.Recursive ?? options.Recursive;
+            }
+
+            PrintServicesBanner(LoadEffectiveSettings());
+            Console.WriteLine("Modo lote: conversion orquestada de multiples imagenes.");
+            return await ConsoleConversionRunner.RunBatchAsync(options).ConfigureAwait(false);
+        }
+
+        private static JsonSucaSettingsService CreateSettingsService()
+        {
+            IAsyncKeyedLock keyedLock = new AsyncKeyedLock();
+            var fileStore = new AtomicFileStore(keyedLock, NullLogger<AtomicFileStore>.Instance);
+            return new JsonSucaSettingsService(
+                SucaRuntimePaths.DefaultSettingsRoot(),
+                fileStore,
+                keyedLock,
+                new RuntimeObservability(),
+                NullLogger<JsonSucaSettingsService>.Instance);
+        }
+
+        private static SucaSettings LoadEffectiveSettings()
+        {
+            try
+            {
+                return CreateSettingsService().GetEffective();
+            }
+            catch
+            {
+                return SucaSettings.DefaultValue();
+            }
+        }
+
+        private static int RunSettingsView()
+        {
+            var service = CreateSettingsService();
+            EffectiveSettings detailed = service.GetEffectiveDetailed();
+
+            ConsoleEx.Title("AJUSTES EFECTIVOS");
+            var root = JsonSerializer.SerializeToNode(detailed.Values, JsonDefaults.Indented) as JsonObject;
+            var lines = new List<string>();
+            CollectLeafNodes(root, string.Empty, (path, value) => lines.Add(
+                $"  {path,-38} = {value?.ToJsonString() ?? "(nulo)",-30} [{(detailed.Sources.TryGetValue(path, out string? source) ? source : "default")}]"));
+
+            foreach (string line in lines)
+                Console.WriteLine(line);
+
+            Console.WriteLine();
+            Console.WriteLine($"Raíz de ajustes: {SucaRuntimePaths.DefaultSettingsRoot()}");
+            Console.WriteLine("Edite el scope usuario con: --settings-edit");
+            return 0;
+        }
+
+        private static async Task<int> RunSettingsEditAsync()
+        {
+            if (Console.IsInputRedirected)
+            {
+                Console.Error.WriteLine("--settings-edit requiere consola interactiva. En modo web use PUT /api/settings/user.");
+                return 2;
+            }
+
+            var service = CreateSettingsService();
+            ConsoleEx.Title("EDITOR DE AJUSTES (SCOPE USUARIO)");
+            Console.WriteLine("Escriba cambios como clave=valor. Ejemplos:");
+            Console.WriteLine("  conversion.quality=85    conversion.format=webp    conversion.engine=suca");
+            Console.WriteLine("  web.maxUploadMegabytes=25    console.timeoutSeconds=240    lmstudio.baseUrl=http://127.0.0.1:1234/v1");
+            Console.WriteLine("Comandos: list (ver cambios), save (guardar), cancel (salir).");
+            Console.WriteLine();
+
+            var patch = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            while (true)
+            {
+                Console.Write("ajustes> ");
+                string? line = Console.ReadLine();
+                if (line is null)
+                    break;
+
+                line = line.Trim();
+                if (line.Length == 0)
+                    continue;
+
+                if (IsCommand(line, "cancel"))
+                {
+                    Console.WriteLine("Cancelado; no se guardaron cambios.");
+                    return 0;
+                }
+
+                if (IsCommand(line, "list"))
+                {
+                    PrintPatch(patch);
+                    continue;
+                }
+
+                if (IsCommand(line, "save"))
+                {
+                    if (patch.Count == 0)
+                    {
+                        Console.WriteLine("No hay cambios pendientes.");
+                        continue;
+                    }
+
+                    var json = new JsonObject();
+                    foreach (var entry in patch)
+                        SetJsonPath(json, entry.Key.Split('.'), entry.Value);
+
+                    try
+                    {
+                        await service.UpdateAsync(SucaSettingsScope.User, json.ToJsonString(JsonDefaults.Indented)).ConfigureAwait(false);
+                        Console.WriteLine("Ajustes guardados en el scope usuario.");
+                        return 0;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"ERROR: {ex.Message}");
+                        continue;
+                    }
+                }
+
+                if (IsCommand(line, "help"))
+                {
+                    Console.WriteLine("clave=valor | list | save | cancel. Las claves usan la forma seccion.propiedad.");
+                    continue;
+                }
+
+                int separator = line.IndexOf('=');
+                if (separator <= 0)
+                {
+                    Console.WriteLine("Formato inválido. Use clave=valor (ej.: conversion.quality=85).");
+                    continue;
+                }
+
+                patch[line[..separator].Trim()] = line[(separator + 1)..].Trim();
+                Console.WriteLine($"Pendiente: {line}");
+            }
+
+            return 0;
+        }
+
+        private static bool IsCommand(string line, string name) =>
+            string.Equals(line, name, StringComparison.OrdinalIgnoreCase);
+
+        private static void PrintPatch(Dictionary<string, string> patch)
+        {
+            if (patch.Count == 0)
+            {
+                Console.WriteLine("(sin cambios pendientes)");
+                return;
+            }
+
+            foreach (var entry in patch)
+                Console.WriteLine($"  {entry.Key} = {entry.Value}");
+        }
+
+        private static void SetJsonPath(JsonObject root, string[] segments, string rawValue)
+        {
+            JsonObject current = root;
+            for (int i = 0; i < segments.Length - 1; i++)
+            {
+                if (current[segments[i]] is not JsonObject nested)
+                {
+                    nested = new JsonObject();
+                    current[segments[i]] = nested;
+                }
+
+                current = nested;
+            }
+
+            string leaf = segments[^1];
+            if (int.TryParse(rawValue, out int intValue))
+                current[leaf] = JsonValue.Create(intValue);
+            else if (bool.TryParse(rawValue, out bool boolValue))
+                current[leaf] = JsonValue.Create(boolValue);
+            else
+                current[leaf] = rawValue;
+        }
+
+        private static void CollectLeafNodes(JsonNode? node, string prefix, Action<string, JsonNode?> visit)
+        {
+            if (node is JsonObject obj)
+            {
+                foreach (var property in obj)
+                {
+                    string path = string.IsNullOrEmpty(prefix) ? property.Key : $"{prefix}.{property.Key}";
+                    CollectLeafNodes(property.Value, path, visit);
+                }
+
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(prefix))
+                visit(prefix, node);
         }
 
         static async Task DemoAsync(string outputPath, CancellationToken cancellationToken)
