@@ -47,6 +47,36 @@ La navegacion es **multipage real**: cada servicio es su propia pagina HTML y el
 - `/minichat` redirige a `/studio/chat.html`; `/studio` es la entrada (redirige a `/studio/`).
 - Apertura profunda: `/studio/galeria.html?detalle={id}` abre el detalle de una imagen (usado por el enlace "Detalle" de la cola del Compresor).
 
+## Fundaciones transversales (Fase A)
+
+Todo el shell se apoya en cuatro modulos compartidos:
+
+```text
+js/i18n.js       Diccionarios es/en, t(), applyI18n(), formato con Intl y persistencia (suca.lang)
+js/a11y.js       Overlays con foco atrapado, Escape, navegacion con flechas y region viva
+js/shortcuts.js  Atajos globales y dialogo de ayuda
+js/layout.js     Aside, topbar, chip de salud y conmutador de idioma
+js/main.js       Estado global, ajustes, toasts, sondeo de /health y utilidades
+```
+
+- **Idioma**: `t("clave")` devuelve la clave si falta y la registra en
+  `window.__sucaI18nMissing` (verificacion en QA). Los elementos estáticos se traducen con
+  `data-i18n`, `data-i18n-placeholder`, `data-i18n-title`, `data-i18n-aria-label`,
+  `data-i18n-tip` y `data-i18n-tip-title`. El idioma se guarda en `suca.lang`.
+  Regla critica: los suscriptores de `onLanguageChange` se registran **una sola vez** (fuera
+  de `renderLayout`), porque registrare dentro del listener que vuelve a renderizar produce
+  crecimiento exponencial y cuelga el navegador.
+- **Salud del servidor**: chip en el topbar con sondeo a `/health` cada 10 s, reintento al
+  recuperar el foco de la ventana y al hacer clic en el chip; avisa por toast al perder o
+  recuperar la conexion.
+- **Atajos**: `Ctrl+O` abrir archivos, `Ctrl+Enter` convertir pendientes, `Ctrl+Shift+C`
+  cancelar conversiones en curso y `Shift+?` ayuda. Se ignoran dentro de campos de
+  escritura; las acciones de pagina viajan como evento `suca:action`.
+- **Accesibilidad**: los overlays declaran `role="dialog"` y `aria-modal`, atrapan `Tab`,
+  cierran con `Escape` y devuelven el foco al elemento de origen; las listas y grillas
+  navegables usan `data-nav-item` y flechas; el progreso se anuncia con una region viva
+  (`.visually-hidden`, `role="status"`).
+
 ## Componentes interactivos del Compresor (extras)
 
 - **Explorador de carpetas** (`#folder-overlay`): dialogo modal que consume `GET /api/web/folders`; lista unidades y subcarpetas con conteo de imagenes, sube con "Arriba" y devuelve la ruta seleccionada al campo `Carpeta del servidor`

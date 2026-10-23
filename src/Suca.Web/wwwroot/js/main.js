@@ -1,16 +1,24 @@
 import { renderLayout } from "./layout.js";
+import { initI18n, applyI18n, t, onLanguageChange } from "./i18n.js";
+import { initShortcuts } from "./shortcuts.js";
+import { announce } from "./a11y.js";
 
 /* ============================== Estado global ============================== */
 
 export const state = {
   settings: { values: {}, sources: {} },
-  collections: []
+  collections: [],
+  server: { state: "checking", checkedAt: null }
 };
 
 /* ============================== Arranque ============================== */
 
 document.addEventListener("DOMContentLoaded", async () => {
+  initI18n();
   renderLayout();
+  applyI18n();
+  initShortcuts();
+  initServerStatus();
 
   await loadServerSettings();
 
@@ -25,6 +33,81 @@ async function loadServerSettings() {
     toast(`No se pudieron cargar los ajustes: ${toErrorMessage(error)}`, "error");
   }
 }
+
+/* ============================== Estado del servidor ============================== */
+
+let statusTimer = 0;
+
+function paintServerStatus(nextState) {
+  const chip = document.getElementById("server-status");
+  if (!chip) return;
+
+  state.server.state = nextState;
+  chip.setAttribute("data-state", nextState);
+  chip.setAttribute("data-tip-title", t(`status.${nextState}`));
+  chip.setAttribute("data-tip", t(`status.${nextState}`));
+  chip.setAttribute("title", t(`status.${nextState}`));
+
+  const labels = { ok: "\u25CF", degraded: "\u25B2", down: "\u2715", checking: "\u22EF" };
+  chip.textContent = labels[nextState] ?? labels.checking;
+}
+
+async function checkServerHealth() {
+  const previous = state.server.state;
+  let nextState = "down";
+
+  try {
+    const response = await fetch("/health", { cache: "no-store" });
+    if (response.ok) {
+      const body = await response.json().catch(() => null);
+      const statusText = String(body?.status ?? "").toLowerCase();
+      nextState = statusText === "degraded" || statusText === "unhealthy" ? "degraded" : "ok";
+    }
+  } catch {
+    nextState = "down";
+  }
+
+  state.server.checkedAt = new Date();
+  paintServerStatus(nextState);
+
+  if (previous !== nextState) {
+    if (nextState === "down" && previous !== "checking") {
+      toast(t("status.lost"), "error", 6000);
+      announce(t("status.down"));
+    } else if (previous === "down" && nextState !== "down") {
+      toast(t("status.restored"), "info");
+      announce(t("status.ok"));
+    }
+  }
+
+  return nextState;
+}
+
+function initServerStatus() {
+  paintServerStatus("checking");
+  void checkServerHealth();
+  window.clearInterval(statusTimer);
+  statusTimer = window.setInterval(() => void checkServerHealth(), 10000);
+
+  onLanguageChange(() => {
+    paintServerStatus(state.server.state);
+  });
+
+  // Al volver a la pestaña se reintenta de inmediato, sin esperar al sondeo.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") void checkServerHealth();
+  });
+  window.addEventListener("focus", () => void checkServerHealth());
+
+  // Clic en el chip = comprobacion inmediata.
+  document.addEventListener("click", (event) => {
+    if (event.target instanceof Element && event.target.closest("#server-status")) {
+      void checkServerHealth();
+    }
+  });
+}
+
+export { checkServerHealth, announce };
 
 /* ============================== Toasts ============================== */
 

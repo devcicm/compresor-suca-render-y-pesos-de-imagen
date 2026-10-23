@@ -2,6 +2,7 @@ import {
   state, el, escapeHtml, formatBytes, toast,
   fetchJson, copyTextToClipboard
 } from "../main.js";
+import { openOverlay, closeOverlay, enableListNavigation } from "../a11y.js";
 
 let initialized = false;
 let activeCollection = "";
@@ -46,6 +47,7 @@ export function initGalleryView() {
   }
 
   void loadGallery();
+  enableListNavigation(el("gallery-grid"), ".gallery-card");
 }
 
 async function loadGallery() {
@@ -221,6 +223,9 @@ function renderGrid(items) {
   for (const record of items) {
     const card = document.createElement("article");
     card.className = "gallery-card";
+    card.setAttribute("tabindex", "0");
+    card.setAttribute("data-nav-item", "true");
+    card.setAttribute("aria-label", record.originalFileName);
     card.innerHTML = `
       <img src="/api/web/images/${record.id}/file?variant=converted" alt="${escapeHtml(record.originalFileName)}" data-open="${record.id}">
       <div class="g-body">
@@ -313,12 +318,15 @@ async function openDetail(id) {
   el("detail-download-original").href = `/api/web/images/${id}/file?variant=original`;
   el("base64-preview").hidden = true;
   el("base64-preview").textContent = "";
-  el("detail-overlay").hidden = false;
+  openOverlay(el("detail-overlay"), () => {
+    detailId = null;
+  });
 }
 
 function closeDetail() {
-  el("detail-overlay").hidden = true;
-  detailId = null;
+  closeOverlay(el("detail-overlay"), () => {
+    detailId = null;
+  });
 }
 
 async function copyBase64(id, variant) {

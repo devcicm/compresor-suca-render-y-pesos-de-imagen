@@ -1,7 +1,10 @@
 import {
   state, el, escapeHtml, formatBytes, toast,
-  fetchJson, uploadWithProgress, correlationId, copyTextToClipboard
+  fetchJson, uploadWithProgress, correlationId, copyTextToClipboard,
+  announce, checkServerHealth
 } from "../main.js";
+import { t } from "../i18n.js";
+import { openOverlay, closeOverlay, enableListNavigation } from "../a11y.js";
 
 const queue = [];           // { key, file, previewUrl, state, percent, phase, record, error, cancelFn }
 let converting = false;
@@ -67,6 +70,24 @@ export function initCompressView() {
     if (event.target === el("folder-overlay")) closeFolderBrowser();
   });
 
+  // Atajos globales: abrir archivos, convertir y cancelar.
+  document.addEventListener("suca:action", (event) => {
+    const action = event.detail?.action;
+    if (action === "open-files") {
+      el("file-input").click();
+    } else if (action === "convert") {
+      void convertQueue();
+    } else if (action === "cancel-all") {
+      cancelAllItems();
+    }
+  });
+
+  enableListNavigation(el("queue-list"), ".queue-item");
+
+  document.addEventListener("suca:settings", applyDefaults);
+  document.addEventListener("suca:collections", fillCollectionList);
+  refreshCollectionList();
+
   el("quality").addEventListener("input", () => {
     el("quality-out").textContent = el("quality").value;
   });
@@ -77,10 +98,28 @@ export function initCompressView() {
   });
 
   el("order-submit").addEventListener("click", () => void submitOrder());
+}
 
-  document.addEventListener("suca:settings", applyDefaults);
-  document.addEventListener("suca:collections", fillCollectionList);
-  refreshCollectionList();
+/* Atajo "cancelar todo": detiene lo que este en curso y deja el resto en espera. */
+function cancelAllItems() {
+  let affected = 0;
+
+  for (const item of queue) {
+    if (["uploading", "processing"].includes(item.state)) {
+      cancelItem(item);
+      affected += 1;
+    } else if (item.state === "pending" || item.state === "waiting") {
+      item.state = "cancelled";
+      item.error = "Cancelada";
+      affected += 1;
+    }
+  }
+
+  renderQueue();
+  toast(
+    affected > 0 ? `Se cancelaron ${affected} conversion(es) en curso.` : "No hay conversiones en curso.",
+    affected > 0 ? "warn" : "info"
+  );
 }
 
 function applyDefaults() {
@@ -325,6 +364,9 @@ function renderQueue() {
   for (const item of queue) {
     const li = document.createElement("li");
     li.className = "queue-item";
+    li.setAttribute("tabindex", "0");
+    li.setAttribute("data-nav-item", "true");
+    li.setAttribute("aria-label", item.file.name);
     li.setAttribute("data-state", item.state === "done" ? "done" : item.state === "error" ? "error" : "");
 
     if (editableState(item)) {
@@ -463,21 +505,15 @@ function renderQueue() {
   el("aggregate-text").textContent = `${done}/${total} listas · ${aggregate}%`;
 
   el("queue-status").textContent = total === 0
-    ? "Sin archivos en la cola."
+    ? t("queue.empty")
     : `${total} archivo(s), ${pending} pendientes, ${done} completadas.`;
+
+  announce(t("queue.live", { done, total }));
 }
 
 function stateLabel(state) {
-  return {
-    pending: "Pendiente",
-    waiting: "En cola",
-    uploading: "Subiendo",
-    processing: "Procesando",
-    done: "Lista",
-    paused: "Pausada",
-    error: "Error",
-    cancelled: "Cancelada"
-  }[state] || state;
+  const label = t(`queue.state.${state}`);
+  return label.startsWith("queue.state.") ? state : label;
 }
 
 async function copyResultBase64(id) {
@@ -725,18 +761,18 @@ function removeSelected() {
 const folderState = { path: "", parent: null };
 
 function openFolderBrowser() {
-  el("folder-overlay").hidden = false;
   el("folder-error").textContent = "";
+  openOverlay(el("folder-overlay"));
   void loadFolder("");
 }
 
 function closeFolderBrowser() {
-  el("folder-overlay").hidden = true;
+  closeOverlay(el("folder-overlay"));
 }
 
 async function loadFolder(path) {
   const list = el("folder-items");
-  list.innerHTML = '<div class="empty-state">Cargando...</div>';
+  list.innerHTML = `<div class="empty-state">${escapeHtml(t("common.loading"))}</div>`;
   el("folder-error").textContent = "";
 
   try {
@@ -748,12 +784,12 @@ async function loadFolder(path) {
     folderState.path = data.path || "";
     folderState.parent = data.parent;
     el("folder-current").textContent = data.mode === "drives"
-      ? "Unidades disponibles"
+      ? t("folder.drives")
       : (data.path || "(raiz)");
 
     list.innerHTML = "";
     if (data.items.length === 0) {
-      list.innerHTML = '<div class="empty-state">Sin subcarpetas.</div>';
+      list.innerHTML = `<div class="empty-state">${escapeHtml(t("folder.empty"))}</div>`;
       return;
     }
 
@@ -765,14 +801,19 @@ async function loadFolder(path) {
       row.innerHTML = `
         <span>&#128193; ${escapeHtml(entry.name)}</span>
         ${entry.imageCount !== null && entry.imageCount !== undefined
-          ? `<span class="f-count">${entry.imageCount} imagen(es)</span>`
+          ? `<span class="f-count">${escapeHtml(t("folder.count", { count: entry.imageCount }))}</span>`
           : ""}`;
       row.addEventListener("click", () => void loadFolder(entry.path));
       row.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") void loadFolder(entry.path);
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          void loadFolder(entry.path);
+        }
       });
       list.appendChild(row);
     }
+
+    enableListNavigation(list, ".folder-entry");
   } catch (error) {
     list.innerHTML = "";
     el("folder-error").textContent = error.message;
