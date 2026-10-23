@@ -20,9 +20,11 @@ Todavia no hay release publicada: este es el estado actual del codigo de `main`.
 - CI comprueba el contrato del selector (label + input sin `hidden`).
 
 **Herramientas de desarrollo**
-- `build.ps1`: compila y, si hace falta, detiene antes la instancia abierta de la app
-  (Windows bloquea el `.exe` y MSBuild fallaba con `MSB3027`/`MSB3021`). Con
-  `-KeepRunning` solo avisa y falla en vez de cerrarla.
+- Target `StopRunningSuca` en el `.csproj`: cierra la instancia abierta antes de compilar
+  (Windows bloquea el `.exe` y MSBuild fallaba con `MSB3027`/`MSB3021`). `dotnet build` y
+  `F5` funcionan con el servicio corriendo; `-p:StopRunningApp=false` lo desactiva.
+- `build.ps1`: helper opcional que hace lo mismo de forma explicita y admite
+  `-Configuration Release` y `-KeepRunning` (solo avisa y falla).
 
 **Progreso observable y proteccion contra cuelgues**
 - **Porcentaje real y heartbeat** durante la conversion: el kernel reporta por etapas

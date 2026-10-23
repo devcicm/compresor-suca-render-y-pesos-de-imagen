@@ -35,5 +35,16 @@
     <Compile Remove="legacy/**/*.cs" />
   </ItemGroup>
 
+  <!-- Windows bloquea el .exe mientras la app corre y MSBuild falla con
+       MSB3027/MSB3021 tras 10 reintentos. Antes de copiar la salida se cierra la
+       instancia en ejecucion. Desactivar con -p:StopRunningApp=false. -->
+  <Target Name="StopRunningSuca" BeforeTargets="BeforeBuild" Condition="'$(StopRunningApp)' != 'false'">
+    <Exec
+      Command="powershell -NoProfile -NonInteractive -Command &quot;$p = Get-Process -Name 'ConsoleApp suca compress' -ErrorAction SilentlyContinue; if ($p) { $p | Stop-Process -Force; Write-Output 'SUCA estaba abierto: se cerro para liberar el .exe.' }; exit 0&quot;"
+      ContinueOnError="true"
+      StandardOutputImportance="low"
+      StandardErrorImportance="low" />
+  </Target>
+
 </Project>
 

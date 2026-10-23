@@ -21,9 +21,10 @@ dotnet build "ConsoleApp suca compress.csproj"
 La primera ejecucion crea `runtime/` (galeria, ordenes, ajustes, chat e indices). Esa
 carpeta es **local y esta ignorada por Git**: no la suba nunca.
 
-Windows bloquea el `.exe` mientras la app corre: si recompila con una instancia abierta,
-MSBuild falla con `MSB3027`/`MSB3021` despues de 10 reintentos. Use `.\build.ps1`
-(detiene la instancia primero) o cierre la app antes de compilar.
+Windows bloquea el `.exe` mientras la app corre. El target `StopRunningSuca` del
+`.csproj` cierra la instancia antes de compilar, asi que `dotnet build` y `F5` funcionan
+aunque el servicio siga abierto. Para desactivarlo: `dotnet build -p:StopRunningApp=false`
+(o `.\build.ps1 -KeepRunning`, que falla sin cerrar nada).
 
 ## Antes de abrir un PR
 
