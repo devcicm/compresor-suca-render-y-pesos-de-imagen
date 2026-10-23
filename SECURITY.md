@@ -40,6 +40,30 @@ Si ocurre en tu equipo:
 
 ---
 
+## Dependencias con avisos de seguridad
+
+El proyecto fija **SixLabors.ImageSharp 2.1.13**, la ultima version de la serie
+**Apache-2.0** (compatible con la licencia MIT del proyecto). Esa serie arrastra avisos
+publicados (DoS por imagenes malformadas: GHSA-j3p4-wp97-rph4, GHSA-j9gm-c75j-xc9q,
+GHSA-jjfr-hcj7-qf5w, GHSA-gwg2-r3hj-4w44, GHSA-wmxv-xphr-5c9g). La serie 3.x corrige esos
+avisos, pero **exige licencia comercial de Six Labors en tiempo de compilacion**, lo que
+contradiria la licencia MIT y haria fallar la integracion continua de un clon abierto.
+
+Razon del criterio:
+
+- SUCA es una herramienta **local de escritorio**: procesa imagenes de quien la usa, no
+  entrada de terceros sin filtrar.
+- Los avisos son de denegacion de servicio por archivos corruptos, no de ejecucion de codigo.
+- El servicio ya limita el tamano de subida (`web.maxUploadMegabytes`) y reporta
+  `unsupported-image` cuando la decodificacion falla.
+
+Cada ejecucion de CI imprime el informe (`dotnet list package --vulnerable`) para que el
+estado sea visible. Si en el futuro el proyecto necesita la serie 3.x, hay que comprar la
+licencia de Six Labors y aportar `SixLaborsLicenseKey` como secreto de la accion, lo que
+implicaria revisar la licencia del repositorio.
+
+---
+
 ## Reportar una vulnerabilidad
 
 No abra un issue publico para un fallo de seguridad. Escriba a

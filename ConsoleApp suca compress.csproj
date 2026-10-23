@@ -20,8 +20,11 @@
 
   <ItemGroup>
     <PackageReference Include="PdfPig" Version="0.1.12" />
-    <PackageReference Include="SixLabors.ImageSharp" Version="3.*" />
-    <PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.1.6" />
+    <!-- ImageSharp fijado a la linea 2.1.x: Apache-2.0, gratuita y compatible con la
+         licencia MIT del proyecto. La 3.x exige licencia comercial de Six Labors en
+         compilacion (rompia la CI) y sus versiones flotantes rompian la reproducibilidad.
+         SixLabors.ImageSharp.Drawing se elimino: el codigo no lo usa. -->
+    <PackageReference Include="SixLabors.ImageSharp" Version="2.1.13" />
   </ItemGroup>
 
   <ItemGroup>
@@ -33,3 +36,4 @@
   </ItemGroup>
 
 </Project>
+

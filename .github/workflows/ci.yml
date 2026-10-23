@@ -37,10 +37,33 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Secret scan (trufflehog)
+        # Solo en pull_request: la accion compara BASE..HEAD y falla si no hay
+        # commit base (por ejemplo, el primer push a un repositorio vacio).
+        if: github.event_name == 'pull_request'
         uses: trufflesecurity/trufflehog@main
         with:
           path: .
           extra_args: --only-verified
+
+      - name: Secret scan del historial (primera subida)
+        if: github.event_name == 'push' && github.event.before == '0000000000000000000000000000000000000000'
+        shell: pwsh
+        run: |
+          git fetch --quiet --unshallow || git fetch --quiet --all
+          $found = git log -p --all | Select-String -Pattern 'AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}|-----BEGIN [A-Z ]*PRIVATE KEY-----'
+          if ($found) {
+            Write-Error "Posibles secretos en el historial: $($found.Count) coincidencia(s)."
+            exit 1
+          }
+          Write-Host "Sin secretos evidentes en el historial."
+
+      - name: Aviso de dependencias vulnerables (informativo)
+        shell: pwsh
+        run: |
+          # No falla el build: deja constancia de las dependencias con avisos para
+          # revisar en cada ejecucion. Ver SECURITY.md para el criterio de ImageSharp.
+          dotnet list "ConsoleApp suca compress.csproj" package --vulnerable --include-transitive
+          Write-Host "Fin del informe de vulnerabilidades (informativo)."
 
       - name: Verificar que no se versionan datos de runtime
         shell: pwsh

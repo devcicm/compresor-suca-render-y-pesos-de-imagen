@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using SixLabors.ImageSharp.Formats;
 using SUCA_Compressor.Application.Common;
 using SUCA_Compressor.Kernel;
 using SUCA_Compressor.Shared.Imaging;
@@ -1054,10 +1055,14 @@ namespace SUCA_Compressor.Application.Conversion
             if (info is null)
                 return Result<ConversionRecord>.Fail("El archivo no es una imagen reconocida.", ConversionErrorCodes.UnsupportedImage);
 
+            // ImageSharp 2.1 no expone DecodedImageFormat ni ImageFormatDetector: el
+            // formato real del archivo se obtiene con Image.DetectFormat.
+            IImageFormat? detected = Image.DetectFormat(sourceBytes);
+
             record.OriginalWidth = info.Width;
             record.OriginalHeight = info.Height;
-            record.OriginalContentType = info.Metadata.DecodedImageFormat?.DefaultMimeType ?? "application/octet-stream";
-            record.InputFormat = info.Metadata.DecodedImageFormat?.Name ?? "";
+            record.OriginalContentType = detected?.DefaultMimeType ?? "application/octet-stream";
+            record.InputFormat = detected?.Name ?? "";
             record.InputHasExif = info.Metadata.ExifProfile is not null;
 
             source.Position = 0;
@@ -1113,8 +1118,8 @@ namespace SUCA_Compressor.Application.Conversion
             if (originalInfo is null)
                 return Result<ConversionRecord>.Fail("El archivo no es una imagen reconocida.", ConversionErrorCodes.UnsupportedImage);
 
-            record.OriginalContentType = originalInfo.Metadata.DecodedImageFormat?.DefaultMimeType ?? "application/octet-stream";
-            record.InputFormat = originalInfo.Metadata.DecodedImageFormat?.Name ?? "";
+            record.OriginalContentType = Image.DetectFormat(sourceBytes)?.DefaultMimeType ?? "application/octet-stream";
+            record.InputFormat = Image.DetectFormat(sourceBytes)?.Name ?? "";
             record.InputHasExif = originalInfo.Metadata.ExifProfile is not null;
             record.OriginalWidth = originalInfo.Width;
             record.OriginalHeight = originalInfo.Height;
