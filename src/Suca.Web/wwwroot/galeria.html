@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Galeria — SUCA Studio</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231e6b52'/%3E%3Ctext x='16' y='23' font-size='18' font-family='Segoe UI' font-weight='700' text-anchor='middle' fill='%23f5f3ed'%3ES%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/studio/css/suca-ui.css">
+</head>
+<body data-page="galeria" data-title="Galeria" data-subtitle="Resultados agrupados por coleccion">
+  <a class="skip-link" href="#main">Saltar al contenido</a>
+
+  <aside class="svc-nav" id="svc-nav" aria-label="Servicios SUCA"></aside>
+  <div class="svc-backdrop" id="nav-backdrop" hidden></div>
+
+  <main class="svc-main" id="main">
+    <header class="svc-topbar">
+      <button class="svc-burger" id="nav-burger" type="button" aria-label="Abrir menu">&#9776;</button>
+      <h1 id="view-title"></h1>
+      <span id="view-subtitle" class="svc-topbar-sub"></span>
+    </header>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Colecciones
+          <span class="tip-dot" data-tip-title="Colecciones" data-tip="Categorias de la galeria. Consulta masiva por API: /api/web/collections/{nombre}/images incluye base64 y metricas." tabindex="0" role="note">?</span>
+        </h2>
+        <div class="btn-row">
+          <button id="reveal-storage-button" type="button" class="btn">Abrir carpeta
+            <span class="tip-dot" data-tip-title="Abrir carpeta" data-tip="Abre el Explorador de Windows en la carpeta runtime/web/images con las imagenes convertidas." data-tip-pos="top" tabindex="0" role="note">?</span>
+          </button>
+          <button id="copy-paths-button" type="button" class="btn">Copiar rutas
+            <span class="tip-dot" data-tip-title="Copiar rutas" data-tip="Copia al portapapeles la ruta completa del archivo convertido de cada imagen visible (o de la coleccion filtrada), una por linea." data-tip-pos="top" tabindex="0" role="note">?</span>
+          </button>
+          <button id="refresh-gallery-button" type="button" class="btn">Actualizar</button>
+        </div>
+      </div>
+      <div id="collection-chips" class="chip-row"></div>
+    </div>
+
+    <details class="card" id="collections-manager">
+      <summary>Gestionar colecciones
+        <span class="tip-dot" data-tip-title="Gestionar colecciones" data-tip="Crear, renombrar o disolver categorias. Disolver mueve las imagenes a general sin borrar archivos. Renombrar actualiza todas las imagenes de la coleccion." tabindex="0" role="note">?</span>
+      </summary>
+      <div class="btn-row">
+        <input id="new-collection-name" type="text" placeholder="nueva-coleccion" style="max-width:260px">
+        <button id="create-collection-button" type="button" class="btn btn-primary">Crear</button>
+        <span id="collections-status" class="muted-note"></span>
+      </div>
+      <div id="collections-admin-list" class="orders-list"></div>
+    </details>
+
+    <div id="gallery-grid" class="gallery-grid"></div>
+    <p id="gallery-empty" class="muted-note" hidden>Todavia no hay imagenes convertidas.</p>
+  </main>
+
+  <div id="detail-overlay" class="overlay" hidden>
+    <div class="detail-card card">
+      <header class="card-head">
+        <h3 id="detail-title">Detalle</h3>
+        <button id="detail-close" type="button" class="btn">Cerrar</button>
+      </header>
+      <div class="detail-body">
+        <img id="detail-image" alt="Imagen convertida">
+        <div class="detail-info">
+          <h4>Entrada</h4>
+          <div id="detail-input-chips" class="chip-row"></div>
+          <h4>Salida</h4>
+          <div id="detail-output-chips" class="chip-row"></div>
+          <h4>Estado</h4>
+          <div id="detail-state-chips" class="chip-row"></div>
+          <div class="btn-row">
+            <button id="copy-base64-converted" type="button" class="btn btn-primary">Copiar base64 (convertida)
+              <span class="tip-dot" data-tip-title="Base64" data-tip="Copia el contenido completo en base64 de la imagen convertida. Endpoint: /api/web/images/{id}/base64" data-tip-pos="top" tabindex="0" role="note">?</span>
+            </button>
+            <button id="copy-base64-original" type="button" class="btn">Copiar base64 (original)</button>
+            <a id="detail-download" class="btn" download>Descargar convertida</a>
+            <a id="detail-download-original" class="btn" download>Descargar original</a>
+            <button id="detail-copy-path" type="button" class="btn">Copiar ruta
+              <span class="tip-dot" data-tip-title="Copiar ruta" data-tip="Copia la ruta completa del archivo convertido en disco (GET /api/web/images/{id}/path)." data-tip-pos="top" tabindex="0" role="note">?</span>
+            </button>
+            <button id="detail-reveal" type="button" class="btn">Abrir carpeta
+              <span class="tip-dot" data-tip-title="Abrir carpeta" data-tip="Abre el Explorador de Windows con este archivo seleccionado (POST /api/web/images/{id}/reveal)." data-tip-pos="top" tabindex="0" role="note">?</span>
+            </button>
+            <button id="show-base64" type="button" class="btn">Ver base64 (JSON)</button>
+            <button id="detail-delete" type="button" class="btn btn-danger">Eliminar</button>
+          </div>
+          <pre id="base64-preview" class="base64-preview" hidden></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <script type="module" src="/studio/js/main.js"></script>
+  <script type="module" src="/studio/js/pages/galeria.js"></script>
+</body>
+</html>

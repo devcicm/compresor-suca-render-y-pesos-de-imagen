@@ -3,124 +3,162 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SUCA Minichat</title>
-  <link rel="stylesheet" href="./styles.css">
+  <title>SUCA Studio</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231e6b52'/%3E%3Ctext x='16' y='23' font-size='18' font-family='Segoe UI' font-weight='700' text-anchor='middle' fill='%23f5f3ed'%3ES%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/studio/css/suca-ui.css">
 </head>
-<body>
-  <div class="shell">
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-mark">S</div>
-        <div>
-          <h1>SUCA Minichat</h1>
-          <p>Chat LLM minimal con RAG dinamico</p>
+<body data-page="compresor" data-title="Compresor SUCA" data-subtitle="Conversion orquestada con pipeline SUCA o directo">
+  <a class="skip-link" href="#main">Saltar al contenido</a>
+
+  <aside class="svc-nav" id="svc-nav" aria-label="Servicios SUCA"></aside>
+  <div class="svc-backdrop" id="nav-backdrop" hidden></div>
+
+  <main class="svc-main" id="main">
+    <header class="svc-topbar">
+      <button class="svc-burger" id="nav-burger" type="button" aria-label="Abrir menu">&#9776;</button>
+      <h1 id="view-title"></h1>
+      <span id="view-subtitle" class="svc-topbar-sub"></span>
+    </header>
+
+    <div class="card">
+      <h2>Opciones
+        <span class="tip-dot" data-tip-title="Opciones de conversion" data-tip="Se aplican a todos los archivos de la cola. Los valores iniciales provienen de tus ajustes (scope usuario o sistema)." tabindex="0" role="note">?</span>
+      </h2>
+      <div class="grid-options">
+        <label class="field">
+          <span class="field-label">Motor
+            <span class="tip-dot" data-tip-title="Motor" data-tip="SUCA: pipeline completo con perfil A-D, peso mosca y reporte de integridad (primera opcion). Directo: re-encodado con ImageSharp, mas rapido y predecible." tabindex="0" role="note">?</span>
+          </span>
+          <select id="engine">
+            <option value="suca" selected>Pipeline SUCA</option>
+            <option value="direct">Directo (re-encodar)</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Formato destino
+            <span class="tip-dot" data-tip-title="Formato" data-tip="WebP suele dar el mejor ahorro con buena calidad. JPEG no soporta transparencia. PNG es sin perdida." tabindex="0" role="note">?</span>
+          </span>
+          <select id="format">
+            <option value="webp" selected>WebP (.webp)</option>
+            <option value="jpeg">JPEG (.jpg)</option>
+            <option value="png">PNG (.png)</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Calidad (JPEG/WebP)
+            <span class="tip-dot" data-tip-title="Calidad" data-tip="1-100. Afecta a JPEG y WebP; PNG la ignora. 80 es un buen equilibrio." tabindex="0" role="note">?</span>
+          </span>
+          <span class="quality-row">
+            <input id="quality" type="range" min="1" max="100" step="1" value="80">
+            <output id="quality-out">80</output>
+          </span>
+        </label>
+        <div class="field-pair">
+          <label class="field">
+            <span class="field-label">Ancho max.
+              <span class="tip-dot" data-tip-title="Redimensionar" data-tip="Si defines ancho o alto maximo, la imagen se reduce manteniendo proporcion. Vacio = tamano original." tabindex="0" role="note">?</span>
+            </span>
+            <input id="max-width" type="number" min="16" placeholder="original">
+          </label>
+          <label class="field">
+            <span class="field-label">Alto max.</span>
+            <input id="max-height" type="number" min="16" placeholder="original">
+          </label>
+        </div>
+        <label class="field">
+          <span class="field-label">Coleccion
+            <span class="tip-dot" data-tip-title="Coleccion" data-tip="Categoria de galeria para agrupar resultados (ej.: facturas, web). Consultable por API: /api/web/collections/{nombre}/images." tabindex="0" role="note">?</span>
+          </span>
+          <input id="collection" type="text" list="collection-list" placeholder="general">
+          <datalist id="collection-list"></datalist>
+        </label>
+        <label class="field field-toggle">
+          <span class="field-label">Metadatos
+            <span class="tip-dot" data-tip-title="Metadatos" data-tip="Quita EXIF, ICC e IPTC de la imagen convertida (privacidad y peso)." tabindex="0" role="note">?</span>
+          </span>
+          <span class="toggle"><input id="remove-metadata" type="checkbox" checked><span>Quitar EXIF/ICC</span></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="card dropzone" id="dropzone" role="button" tabindex="0" aria-label="Arrastre imagenes aqui o haga clic para seleccionar">
+      <input id="file-input" type="file" accept="image/*" multiple hidden>
+      <p class="dropzone-title">Arrastre imagenes aqui</p>
+      <p class="dropzone-sub">o</p>
+      <button id="browse-button" type="button" class="btn">Seleccionar archivos</button>
+      <p class="dropzone-hint">Multiples archivos, en paralelo (<span id="parallel-info">3</span> a la vez). WebP preseleccionado.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Cola de conversion
+          <span class="tip-dot" data-tip-title="Cola" data-tip="Cada archivo muestra su barra: subida (0-60%), procesando (60-95%) y listo (100%). Edite motor, formato o calidad por archivo; marque varios y aplique opciones en lote." tabindex="0" role="note">?</span>
+        </h2>
+        <div class="btn-row">
+          <button id="convert-button" type="button" class="btn btn-primary" disabled>Convertir pendientes</button>
+          <button id="pause-all-button" type="button" hidden>Pausar todo</button>
+          <button id="select-all-button" type="button" hidden>Sel. todo</button>
+          <button id="apply-to-selected-button" type="button" class="btn" hidden>Aplicar opciones a seleccionadas
+            <span class="tip-dot" data-tip-title="Aplicar en lote" data-tip="Copia el motor, formato, calidad y coleccion de las Opciones a todas las imagenes marcadas." data-tip-pos="top" tabindex="0" role="note">?</span>
+          </button>
+          <button id="remove-selected-button" type="button" class="btn btn-danger" hidden>Quitar seleccionadas</button>
+          <button id="clear-button" type="button">Limpiar</button>
         </div>
       </div>
+      <div class="progress aggregate" id="aggregate-bar" hidden>
+        <div class="progress-fill" id="aggregate-fill"></div>
+        <span class="progress-text" id="aggregate-text">0/0</span>
+      </div>
+      <ul id="queue-list" class="queue-list"></ul>
+      <p id="queue-status" class="muted-note">Sin archivos en la cola.</p>
+    </div>
 
-      <section class="panel">
-        <div class="panel-head">
-          <h2>Conversations</h2>
-          <button id="new-chat-button" type="button">New</button>
-        </div>
-        <div id="conversation-list" class="conversation-list"></div>
-      </section>
+    <details class="card advanced" id="order-card">
+      <summary>Orden orquestada (avanzado) — convertir una carpeta del servidor
+        <span class="tip-dot" data-tip-title="Orden orquestada" data-tip="Envia un JSON con rutas del servidor y opciones; el backend procesa el lote con la misma maquina de estados. Ideal para servicios o IA via MCP (convert-order)." tabindex="0" role="note">?</span>
+      </summary>
+      <label class="field">
+        <span class="field-label">Carpeta del servidor
+          <span class="tip-dot" data-tip-title="Carpeta del servidor" data-tip="Ruta en el disco donde corre SUCA. Usela con Explorar para navegarla, o Valide para comprobar cuantas imagenes contiene antes de convertir." tabindex="0" role="note">?</span>
+        </span>
+        <span class="btn-row">
+          <input id="order-directory" type="text" placeholder="C:\\imagenes\\lote" style="flex:1 1 240px">
+          <button id="browse-folder-button" type="button" class="btn">Explorar...</button>
+          <button id="order-validate" type="button" class="btn">Validar</button>
+        </span>
+      </label>
+      <label class="field">
+        <span class="field-label">JSON de la orden (opcional; si se llena, se envia tal cual)</span>
+        <textarea id="order-json" rows="6" spellcheck="false" placeholder='{ "sourceDirectory": "...", "defaults": { "engine": "suca", "format": "webp" }, "parallelism": 3 }'></textarea>
+      </label>
+      <div class="btn-row">
+        <button id="order-submit" type="button" class="btn btn-primary">Enviar orden</button>
+        <span id="order-status" class="muted-note"></span>
+      </div>
+    </details>
+  </main>
 
-      <section class="panel">
-        <div class="panel-head">
-          <h2>LM Studio</h2>
-          <button id="reload-models-button" type="button">Reload</button>
-        </div>
-        <label>Base URL
-          <input id="base-url" type="text" autocomplete="off">
-        </label>
-        <label>Chat model
-          <input id="chat-model" type="text" list="chat-model-list" autocomplete="off">
-        </label>
-        <label>Embedding model
-          <input id="embedding-model" type="text" list="embedding-model-list" autocomplete="off">
-        </label>
-        <label>Temperature
-          <input id="temperature" type="number" min="0" max="2" step="0.1">
-        </label>
-        <label>Max tokens
-          <input id="max-tokens" type="number" min="64" max="4096" step="32">
-        </label>
-        <datalist id="chat-model-list"></datalist>
-        <datalist id="embedding-model-list"></datalist>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <h2>RAG</h2>
-          <label class="toggle">
-            <input id="rag-enabled" type="checkbox" checked>
-            <span>Enabled</span>
-          </label>
-        </div>
-        <label>Source directory
-          <input id="source-directory" type="text" autocomplete="off">
-        </label>
-        <label>Semantic index path
-          <input id="semantic-index-path" type="text" autocomplete="off">
-        </label>
-        <div class="grid-two">
-          <label>Top K
-            <input id="top-k" type="number" min="1" max="12" step="1">
-          </label>
-          <label>Attempts
-            <input id="max-delivery-attempts" type="number" min="1" max="8" step="1">
-          </label>
-        </div>
-        <div class="grid-two">
-          <label>Chunk size
-            <input id="chunk-size" type="number" min="200" max="4000" step="50">
-          </label>
-          <label>Chunk overlap
-            <input id="chunk-overlap" type="number" min="0" max="800" step="10">
-          </label>
-        </div>
-        <label class="toggle">
-          <input id="recursive" type="checkbox" checked>
-          <span>Recursive</span>
-        </label>
-        <label class="toggle">
-          <input id="refresh-index" type="checkbox" checked>
-          <span>Refresh index before query</span>
-        </label>
-      </section>
-    </aside>
-
-    <main class="chat">
-      <header class="chat-head">
-        <div>
-          <h2 id="conversation-title">New Chat</h2>
-          <p id="conversation-meta">No active conversation</p>
-        </div>
-        <div class="chat-actions">
-          <button id="refresh-conversations-button" type="button">Refresh</button>
-        </div>
+  <div id="folder-overlay" class="overlay" hidden>
+    <div class="detail-card card">
+      <header class="card-head">
+        <h3>Explorar carpetas del servidor
+          <span class="tip-dot" data-tip-title="Explorador" data-tip="Navega el sistema de archivos donde corre SUCA y elige la carpeta a convertir. Solo lectura; no modifica nada." data-tip-pos="top" tabindex="0" role="note">?</span>
+        </h3>
+        <button id="folder-close" type="button" class="btn">Cerrar</button>
       </header>
-
-      <section id="message-list" class="message-list"></section>
-
-      <section class="response-panel">
-        <div class="response-head">
-          <h3>Last response</h3>
-          <span id="delivery-state" class="status-pill">Idle</span>
-        </div>
-        <pre id="response-summary" class="response-summary">Ready.</pre>
-      </section>
-
-      <form id="composer-form" class="composer">
-        <textarea id="message-input" rows="4" placeholder="Write a message and press Send"></textarea>
-        <div class="composer-actions">
-          <span id="composer-status" class="composer-status">Idle</span>
-          <button id="send-button" type="submit">Send</button>
-        </div>
-      </form>
-    </main>
+      <p id="folder-current" class="cell-mono" style="overflow-wrap:anywhere"></p>
+      <div class="btn-row">
+        <button id="folder-up" type="button" class="btn">&#8593; Arriba</button>
+        <button id="folder-select" type="button" class="btn btn-primary">Seleccionar esta carpeta</button>
+      </div>
+      <div id="folder-items" class="folder-list"></div>
+      <p id="folder-error" class="muted-note"></p>
+    </div>
   </div>
 
-  <script src="./app.js"></script>
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <script type="module" src="/studio/js/main.js"></script>
+  <script type="module" src="/studio/js/pages/compresor.js"></script>
 </body>
 </html>

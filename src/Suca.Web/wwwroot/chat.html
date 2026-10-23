@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chat — SUCA Studio</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231e6b52'/%3E%3Ctext x='16' y='23' font-size='18' font-family='Segoe UI' font-weight='700' text-anchor='middle' fill='%23f5f3ed'%3ES%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/studio/css/suca-ui.css">
+</head>
+<body data-page="chat" data-title="Chat (Minichat)" data-subtitle="LLM local con RAG via LM Studio">
+  <a class="skip-link" href="#main">Saltar al contenido</a>
+
+  <aside class="svc-nav" id="svc-nav" aria-label="Servicios SUCA"></aside>
+  <div class="svc-backdrop" id="nav-backdrop" hidden></div>
+
+  <main class="svc-main" id="main">
+    <header class="svc-topbar">
+      <button class="svc-burger" id="nav-burger" type="button" aria-label="Abrir menu">&#9776;</button>
+      <h1 id="view-title"></h1>
+      <span id="view-subtitle" class="svc-topbar-sub"></span>
+    </header>
+
+    <div class="chat-layout">
+      <div class="card chat-side">
+        <div class="card-head">
+          <h2>Conversaciones</h2>
+          <div class="btn-row">
+            <button id="new-chat-button" type="button" class="btn">Nueva</button>
+            <button id="refresh-conversations-button" type="button" class="btn">&#8635;</button>
+          </div>
+        </div>
+        <div id="conversation-list" class="conversation-list"></div>
+      </div>
+
+      <div class="chat-main">
+        <div class="card chat-panel">
+          <div class="card-head">
+            <h2 id="conversation-title">Nueva conversacion</h2>
+            <span id="delivery-state" class="badge">Idle</span>
+          </div>
+          <section id="message-list" class="message-list" aria-live="polite"></section>
+          <form id="composer-form" class="composer">
+            <textarea id="message-input" rows="3" placeholder="Escribe un mensaje y pulsa Enviar"></textarea>
+            <div class="btn-row composer-actions">
+              <span id="composer-status" class="muted-note">Listo</span>
+              <button id="send-button" type="submit" class="btn btn-primary">Enviar</button>
+            </div>
+          </form>
+        </div>
+
+        <details class="card" id="chat-options">
+          <summary>Opciones de chat (RAG y modelo)</summary>
+          <div class="grid-options">
+            <label class="field"><span class="field-label">Base URL</span><input id="base-url" type="text"></label>
+            <label class="field"><span class="field-label">Modelo de chat</span><input id="chat-model" type="text" list="chat-model-list"></label>
+            <label class="field"><span class="field-label">Modelo de embeddings</span><input id="embedding-model" type="text" list="embedding-model-list"></label>
+            <label class="field"><span class="field-label">Temperature</span><input id="temperature" type="number" min="0" max="2" step="0.1"></label>
+            <label class="field"><span class="field-label">Max tokens</span><input id="max-tokens" type="number" min="64" max="4096" step="32"></label>
+            <label class="field"><span class="field-label">Intentos de entrega</span><input id="max-delivery-attempts" type="number" min="1" max="8"></label>
+          </div>
+          <div class="grid-options">
+            <label class="field"><span class="field-label">Directorio RAG</span><input id="source-directory" type="text"></label>
+            <label class="field"><span class="field-label">Indice semantico</span><input id="semantic-index-path" type="text"></label>
+            <label class="field"><span class="field-label">Top K</span><input id="top-k" type="number" min="1" max="12"></label>
+            <label class="field"><span class="field-label">Chunk size</span><input id="chunk-size" type="number" min="200" max="4000" step="50"></label>
+            <label class="field"><span class="field-label">Chunk overlap</span><input id="chunk-overlap" type="number" min="0" max="800" step="10"></label>
+          </div>
+          <div class="btn-row">
+            <label class="toggle"><input id="rag-enabled" type="checkbox" checked><span>RAG activo</span></label>
+            <label class="toggle"><input id="recursive" type="checkbox" checked><span>Recursivo</span></label>
+            <label class="toggle"><input id="refresh-index" type="checkbox" checked><span>Refrescar indice</span></label>
+          </div>
+          <datalist id="chat-model-list"></datalist>
+          <datalist id="embedding-model-list"></datalist>
+        </details>
+
+        <details class="card">
+          <summary>Ultima respuesta estructurada</summary>
+          <pre id="response-summary" class="response-summary">Lista.</pre>
+        </details>
+      </div>
+    </div>
+  </main>
+
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <script type="module" src="/studio/js/main.js"></script>
+  <script type="module" src="/studio/js/pages/chat.js"></script>
+</body>
+</html>

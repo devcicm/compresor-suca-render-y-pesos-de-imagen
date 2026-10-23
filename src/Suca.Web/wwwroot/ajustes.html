@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ajustes — SUCA Studio</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231e6b52'/%3E%3Ctext x='16' y='23' font-size='18' font-family='Segoe UI' font-weight='700' text-anchor='middle' fill='%23f5f3ed'%3ES%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/studio/css/suca-ui.css">
+</head>
+<body data-page="ajustes" data-title="Ajustes" data-subtitle="Preferencias de sistema y usuario">
+  <a class="skip-link" href="#main">Saltar al contenido</a>
+
+  <aside class="svc-nav" id="svc-nav" aria-label="Servicios SUCA"></aside>
+  <div class="svc-backdrop" id="nav-backdrop" hidden></div>
+
+  <main class="svc-main" id="main">
+    <header class="svc-topbar">
+      <button class="svc-burger" id="nav-burger" type="button" aria-label="Abrir menu">&#9776;</button>
+      <h1 id="view-title"></h1>
+      <span id="view-subtitle" class="svc-topbar-sub"></span>
+    </header>
+
+    <div class="card">
+      <h2>Conversion
+        <span class="tip-dot" data-tip-title="Conversion" data-tip="Valores por defecto para compresion y conversion. engine=suca usa el pipeline completo; directo re-encoda con calidad." tabindex="0" role="note">?</span>
+      </h2>
+      <div class="grid-options">
+        <label class="field" data-path="conversion.engine"><span class="field-label">Motor por defecto</span>
+          <select data-setting="conversion.engine"><option value="suca">SUCA</option><option value="direct">Directo</option></select>
+        </label>
+        <label class="field" data-path="conversion.format"><span class="field-label">Formato por defecto</span>
+          <select data-setting="conversion.format"><option value="webp">WebP</option><option value="jpeg">JPEG</option><option value="png">PNG</option></select>
+        </label>
+        <label class="field" data-path="conversion.quality"><span class="field-label">Calidad</span>
+          <input data-setting="conversion.quality" type="number" min="1" max="100">
+        </label>
+        <label class="field" data-path="conversion.outputDirectory"><span class="field-label">Carpeta de salida (consola)</span>
+          <input data-setting="conversion.outputDirectory" type="text" placeholder="(junto a la imagen)">
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Modo web</h2>
+      <div class="grid-options">
+        <label class="field" data-path="web.maxUploadMegabytes"><span class="field-label">Subida maxima (MB)</span>
+          <input data-setting="web.maxUploadMegabytes" type="number" min="1" max="2048">
+        </label>
+        <label class="field" data-path="web.galleryPageSize"><span class="field-label">Elementos por pagina</span>
+          <input data-setting="web.galleryPageSize" type="number" min="1" max="200">
+        </label>
+        <label class="field" data-path="web.convertTimeoutSeconds"><span class="field-label">Timeout conversion (s)</span>
+          <input data-setting="web.convertTimeoutSeconds" type="number" min="5" max="3600">
+        </label>
+        <label class="field" data-path="web.convertParallelism"><span class="field-label">Conversiones simultaneas
+          <span class="tip-dot" data-tip-title="Paralelismo web" data-tip="Cuantas imagenes se suben y convierten a la vez desde el navegador (1-8)." tabindex="0" role="note">?</span>
+        </span>
+          <input data-setting="web.convertParallelism" type="number" min="1" max="8">
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Modo consola</h2>
+      <div class="grid-options">
+        <label class="field" data-path="console.timeoutSeconds"><span class="field-label">Timeout (s)</span>
+          <input data-setting="console.timeoutSeconds" type="number" min="5" max="3600">
+        </label>
+        <label class="field" data-path="console.parallelism"><span class="field-label">Lote paralelo
+          <span class="tip-dot" data-tip-title="Paralelismo consola" data-tip="Conversiones simultaneas en modo lote de consola (--parallel)." tabindex="0" role="note">?</span>
+        </span>
+          <input data-setting="console.parallelism" type="number" min="1" max="16">
+        </label>
+        <label class="field" data-path="console.outputDirectory"><span class="field-label">Carpeta SUCA_OUT</span>
+          <input data-setting="console.outputDirectory" type="text">
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>LM Studio y RAG</h2>
+      <div class="grid-options">
+        <label class="field" data-path="lmstudio.baseUrl"><span class="field-label">Base URL</span>
+          <input data-setting="lmstudio.baseUrl" type="text">
+        </label>
+        <label class="field" data-path="lmstudio.chatModel"><span class="field-label">Modelo de chat</span>
+          <input data-setting="lmstudio.chatModel" type="text">
+        </label>
+        <label class="field" data-path="lmstudio.embeddingModel"><span class="field-label">Modelo de embeddings</span>
+          <input data-setting="lmstudio.embeddingModel" type="text">
+        </label>
+        <label class="field" data-path="rag.topK"><span class="field-label">RAG Top K</span>
+          <input data-setting="rag.topK" type="number" min="1" max="12">
+        </label>
+        <label class="field" data-path="rag.chunkSize"><span class="field-label">RAG chunk size</span>
+          <input data-setting="rag.chunkSize" type="number" min="200" max="4000" step="50">
+        </label>
+        <label class="field" data-path="rag.chunkOverlap"><span class="field-label">RAG overlap</span>
+          <input data-setting="rag.chunkOverlap" type="number" min="0" max="800" step="10">
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="btn-row settings-actions">
+        <button id="save-user-settings" type="button" class="btn btn-primary">Guardar como usuario
+          <span class="tip-dot" data-tip-title="Scope usuario" data-tip="Solo guarda los campos que cambiaste. Sobrescribe al scope sistema para tu usuario de Windows." data-tip-pos="top" tabindex="0" role="note">?</span>
+        </button>
+        <button id="save-system-settings" type="button" class="btn">Guardar como sistema
+          <span class="tip-dot" data-tip-title="Scope sistema" data-tip="Aplica a todos los usuarios de esta instalacion. Requiere confianza local." data-tip-pos="top" tabindex="0" role="note">?</span>
+        </button>
+        <button id="reset-user-settings" type="button">Restablecer usuario</button>
+        <button id="reset-system-settings" type="button">Restablecer sistema</button>
+      </div>
+      <p id="settings-status" class="muted-note"></p>
+      <p class="muted-note">Precedencia: CLI &gt; usuario &gt; sistema &gt; valores por defecto. Los campos sin valor no se guardan.</p>
+    </div>
+  </main>
+
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <script type="module" src="/studio/js/main.js"></script>
+  <script type="module" src="/studio/js/pages/ajustes.js"></script>
+</body>
+</html>

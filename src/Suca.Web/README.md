@@ -1,22 +1,60 @@
-# SUCA Minichat Web
+# SUCA Web — Shell de Studio
 
-UI web minima para probar el backend `Suca.Chat` desde el mismo host REST. Sus archivos estaticos estan en `src/Suca.Web/wwwroot/`; no contiene logica de dominio ni almacena conversaciones en el repositorio.
+Un unico shell SPA (sin framework) sirve todos los servicios web. `index.html` es el punto de entrada; el enrutado es por hash y los modulos son ES Modules servidos estaticamente.
 
-Ruta:
+## Estructura
 
-- `http://127.0.0.1:5077/minichat/`
+```text
+wwwroot/
+  index.html            Shell: aside de servicios + main + overlays
+  css/suca-ui.css       Design tokens, base, layout y componentes (unico CSS)
+  js/main.js            Helpers, nav colapsable, tooltips, toasts, ajustes
+  js/pages/             Bootstrap por pagina (try/catch aislar errores)
+  js/views/
+    compress.js         Compresor SUCA: cola paralela editable (checkboxes, overrides
+                        por archivo), explorador de carpetas del servidor, progreso,
+                        orden orquestada y validacion previa
+    gallery.js          Galeria: colecciones (CRUD en "Gestionar colecciones"),
+                        chips de metricas, base64, detalle
+    chat.js             Minichat (LLM + RAG via LM Studio)
+    settings.js         Ajustes de sistema y usuario (scopes con origen visible)
+    activity.js         Ordenes orquestadas y eventos de trazabilidad
+```
 
-Requisitos:
+## Convenciones CSS (sin antipatrones)
 
-- host SUCA levantado con `--rest`
-- LM Studio local escuchando en `http://127.0.0.1:1234`
+- Tokens unicos en `:root` (espaciado 4/8, radios, sombras, color, z-index).
+- BEM-lite (`.svc-item`, `.card`, `.field`, `.tip-dot`, `.chip`).
+- Prohibido `!important` y estilos inline desde JS: los estados visuales van por atributos (`data-state`, `data-nav-collapsed`, `aria-expanded`, `[hidden]`).
+- Cuando una clase define `display` (ej. `.overlay`), su version oculta se declara con selector compuesto (`.overlay[hidden]`).
+- Mobile-first; breakpoints 768/900/1024; soporte `prefers-reduced-motion` y `focus-visible`.
 
-La UI consume:
+## Router y navegacion
 
-- `GET /api/lmstudio/models`
-- `GET /api/minichat/defaults`
-- `GET /api/minichat/conversations`
-- `GET /api/minichat/conversations/{id}`
-- `POST /api/minichat/messages/send`
+La navegacion es **multipage real**: cada servicio es su propia pagina HTML y el navegador gestiona la navegacion (sin router JS ni secciones ocultas).
 
-El estado persistente de conversaciones e indices pertenece a `runtime/` y esta ignorado por Git. Consulte [Operacion de SUCA](../../docs/operations/README.md) para iniciar el host, configurar LM Studio y depurar solicitudes.
+| Pagina | URL amigable | Archivo |
+| --- | --- | --- |
+| Compresor SUCA (inicio) | `/studio/` | `index.html` |
+| Galeria | `/studio/galeria` | `galeria.html` |
+| Chat (Minichat) | `/studio/chat` | `chat.html` |
+| Ajustes | `/studio/ajustes` | `ajustes.html` |
+| Actividad | `/studio/actividad` | `actividad.html` |
+
+- El aside se construye desde una unica fuente (`js/layout.js`): marca la pagina activa (`aria-current`), aplica el colapso 240px a 68px y persiste el estado en `localStorage` (`suca.nav.collapsed`).
+- En pantallas pequenas el aside es un drawer con overlay.
+- Cada pagina carga `main.js` (layout + helpers + ajustes del servidor) y su propio bootstrap en `js/pages/{pagina}.js`; si una vista falla al iniciar, el error queda aislado en su pagina y no rompe la navegacion.
+- `/minichat` redirige a `/studio/chat.html`; `/studio` es la entrada (redirige a `/studio/`).
+- Apertura profunda: `/studio/galeria.html?detalle={id}` abre el detalle de una imagen (usado por el enlace "Detalle" de la cola del Compresor).
+
+## Componentes interactivos del Compresor (extras)
+
+- **Explorador de carpetas** (`#folder-overlay`): dialogo modal que consume `GET /api/web/folders`; lista unidades y subcarpetas con conteo de imagenes, sube con "Arriba" y devuelve la ruta seleccionada al campo `Carpeta del servidor`
+- **Validacion de la orden** (`#order-validate`): `POST /api/web/orders/preview` antes de enviar; el resultado o el `errorCode` se muestra en estado y toasts.
+- **Edicion de cola**: cada item editable (`pending/waiting/paused`) renderiza casilla + `<details class="q-edit">` con mini-formulario (motor, formato, calidad, coleccion, ancho/alto maximo) que guarda `item.overrides`; la construccion del `FormData` (`buildForm`) mezcla override con los controles globales. Barra: `Sel. todo`, `Aplicar opciones a seleccionadas`, `Quitar seleccionadas` y quitar por item.
+- **Cancelacion con efecto real**: `cancelItem` aborta el XHR si la subida sigue en curso y, si el servidor ya esta procesando, llama `POST /api/web/convert/cancel` con la `correlationId` del item; la pausa global hace lo mismo enprocessing. El item queda `Cancelada` y el servidor no registra resultado.
+- **Gestionar colecciones** (Galeria): `details` con alta, renombrado y disolucion via `POST|PUT|DELETE /api/web/collections`; deshabilitados para `general` y con confirmaciones por dialogo nativo.
+
+## Tooltips
+
+Los `span.tip-dot` muestran un popover con `data-tip-title` y `data-tip`; posicion con `data-tip-pos` (`right`, `top`). Hover y foco abren; en pantallas tactiles el toque alterna (`data-open`). Cierran con Escape o toque fuera.
