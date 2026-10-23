@@ -58,7 +58,15 @@ Requiere el SDK de .NET 8 y Windows por el destino `net8.0-windows`.
 
 ```powershell
 dotnet build "ConsoleApp suca compress.csproj"
+
+# O con el helper, que detiene antes una instancia abierta:
+.\build.ps1 -Configuration Debug
 ```
+
+> **Si la app esta abierta**, Windows bloquea el `.exe` y MSBuild falla con
+> `MSB3027`/`MSB3021` ("El archivo se ha bloqueado por..."). Cierre la ventana del
+> launcher/servicio o use `.\build.ps1`: detiene la instancia antes de compilar. Las
+> conversiones en vuelo se pierden; lo ya guardado en la galeria no se toca.
 
 Al iniciar la solucion desde Visual Studio con `F5`, o al ejecutar sin argumentos, el launcher muestra una ventana para elegir entre servicio web y consola. Para automatizarlo, indique uno de estos modos:
 ```powershell

@@ -9,6 +9,11 @@ Todavia no hay release publicada: este es el estado actual del codigo de `main`.
 
 ### Anadido
 
+**Herramientas de desarrollo**
+- `build.ps1`: compila y, si hace falta, detiene antes la instancia abierta de la app
+  (Windows bloquea el `.exe` y MSBuild fallaba con `MSB3027`/`MSB3021`). Con
+  `-KeepRunning` solo avisa y falla en vez de cerrarla.
+
 **Progreso observable y proteccion contra cuelgues**
 - **Porcentaje real y heartbeat** durante la conversion: el kernel reporta por etapas
   (`analizando`, `decidiendo`, `cargando`, `redimensionando`, `codificando`,
