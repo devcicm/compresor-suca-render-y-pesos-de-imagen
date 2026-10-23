@@ -158,14 +158,15 @@
       </fieldset>
     </div>
 
-    <div class="card dropzone" id="dropzone" role="button" tabindex="0" aria-label="Arrastre imagenes o carpetas aqui, o haga clic para seleccionar">
-      <input id="file-input" type="file" accept="image/*" multiple hidden>
+    <label class="card dropzone" id="dropzone" for="file-input" tabindex="0"
+         aria-label="Seleccionar imagenes, arrastrarlas o pegarlas con Ctrl+V">
+      <input id="file-input" class="visually-hidden" type="file" accept="image/*" multiple>
       <p class="dropzone-title">Arrastre imagenes o carpetas aqui</p>
       <p class="dropzone-sub">o</p>
-      <button id="browse-button" type="button" class="btn">Seleccionar archivos</button>
+      <span class="btn">Seleccionar archivos</span>
       <p class="dropzone-hint">Multiples archivos, en paralelo (<span id="parallel-info">3</span> a la vez). WebP preseleccionado. Tambien puedes pegar con Ctrl+V.</p>
       <p id="dropzone-progress" class="muted-note" hidden></p>
-    </div>
+    </label>
 
     <div class="card">
       <div class="card-head">

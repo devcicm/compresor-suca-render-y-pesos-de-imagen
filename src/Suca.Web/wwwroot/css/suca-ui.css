@@ -469,9 +469,11 @@ body[data-nav-collapsed="true"] .svc-secondary a {
 
 /* --- Dropzone --- */
 .dropzone {
+  display: block;
   border: 2px dashed var(--color-line);
   text-align: center;
   cursor: pointer;
+  user-select: none;
   transition: border-color var(--speed-fast) var(--ease), background var(--speed-fast) var(--ease);
 }
 

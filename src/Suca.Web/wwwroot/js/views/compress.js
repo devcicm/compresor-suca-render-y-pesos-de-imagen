@@ -23,9 +23,10 @@ export function initCompressView() {
   const dropzone = el("dropzone");
   const input = el("file-input");
 
-  dropzone.addEventListener("click", (event) => {
-    if (event.target.id !== "browse-button") input.click();
-  });
+  // El dropzone es un <label for="file-input">: el navegador abre el selector de
+  // archivos de forma nativa al pulsar cualquier parte. Antes se llamaba a
+  // input.click() desde JS y algunos navegadores/extensiones lo bloquean.
+  // Solo se conserva el manejo por teclado para el Enter/Espacio.
   dropzone.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -33,7 +34,6 @@ export function initCompressView() {
     }
   });
 
-  el("browse-button").addEventListener("click", () => input.click());
   input.addEventListener("change", () => {
     addFiles(input.files);
     input.value = "";

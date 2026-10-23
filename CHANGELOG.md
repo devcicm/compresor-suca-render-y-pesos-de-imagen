@@ -68,6 +68,11 @@ Todavia no hay release publicada: este es el estado actual del codigo de `main`.
 
 ### Corregido
 
+- **"Seleccionar archivos" podia no abrir el selector**: el dropzone paso a ser un
+  `<label for="file-input">` con el input renderizado (`.visually-hidden`) en lugar de un
+  `div` que llamaba `input.click()` sobre un input `hidden`. La activacion ahora es nativa
+  del navegador, sin depender de JavaScript (que algunas extensiones o navegadores
+  embebidos bloquean). Teclado y `Ctrl+O` mantienen su respaldo.
 - **"Abrir carpeta" podia no mostrar ventana**: la apertura pasa a usar la API nativa
   `SHOpenFolderAndSelectItems` (la de "Mostrar en carpeta"), que devuelve un HRESULT real y
   no depende de la linea de comandos de `explorer.exe`; se mantiene la cascada a

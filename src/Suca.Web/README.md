@@ -42,6 +42,11 @@ vive en `js/ui/` y se importa. No se copia (antipatron DRY).
 
 ### Patrones de formulario obligatorios
 
+- **Subida de archivos nativa**: el dropzone es un `<label for="file-input">` con el input
+  **renderizado** (`.visually-hidden`, no `hidden`). El navegador abre el selector solo, sin
+  `input.click()` desde JS: asi no lo bloquean extensiones ni politicas estrictas, y funciona
+  en navegadores embebidos. El teclado (Enter/Espacio) y `Ctrl+O` siguen usando el click
+  programatico como respaldo.
 - **Agrupacion semantica**: los ajustes van en `fieldset` + `legend` (Peso y calidad, Salida).
 - **Divulgacion progresiva**: lo secundario (perfiles guardados) vive en `<details>`; no compite
   visualmente con lo que se usa en cada conversion.
