@@ -281,18 +281,34 @@ async function convertQueue() {
       if (!item) return;
 
       item.state = "uploading";
+      // Un reintento no debe heredar porcentaje ni heartbeat del intento anterior.
+      item.percent = 0;
+      item.phase = "uploading";
+      item.heartbeat = null;
       renderQueue();
 
       const correlation = correlationId();
       item.correlation = correlation;
 
       try {
+        const timeoutSeconds = Number(state.settings?.values?.web?.convertTimeoutSeconds) || 180;
+
         item.record = await uploadWithProgress(item.file, buildForm(item, correlation), {
           correlation,
+          timeoutMs: (timeoutSeconds + 20) * 1000,
           registerCancel: (cancelFn) => { item.cancelFn = cancelFn; },
-          onProgress: (percent, phase) => {
+          onProgress: (percent, phase, info) => {
             item.percent = percent;
             item.phase = phase;
+            item.heartbeat = info
+              ? {
+                  stageMs: info.stageMs,
+                  heartbeatMs: info.heartbeatMs,
+                  elapsedMs: info.elapsedMs,
+                  detail: info.detail,
+                  serverPercent: info.serverPercent
+                }
+              : null;
             if (phase === "processing") item.state = "processing";
             renderQueue();
           }
@@ -477,9 +493,23 @@ function renderQueue() {
     const fill = document.createElement("div");
     fill.className = "progress-fill";
     fill.style.width = `${item.percent}%`;
-    if (item.phase === "processing") fill.setAttribute("data-indeterminate", "true");
+    // Con progreso real del servidor ya no hace falta la animacion indeterminada.
+    if (item.phase === "processing" && !item.heartbeat) fill.setAttribute("data-indeterminate", "true");
     progress.appendChild(fill);
     body.appendChild(progress);
+
+    // Porcentaje numerico + heartbeat (etapa del servidor y tiempo transcurrido).
+    const progressText = progressTextFor(item);
+    if (progressText) {
+      const line = document.createElement("div");
+      line.className = "q-progress-text";
+      // Sin latido > 3 s: la operacion esta sin senal (posible cuelgue).
+      if (typeof item.heartbeat?.heartbeatMs === "number" && item.heartbeat.heartbeatMs > 3000) {
+        line.classList.add("is-stalled");
+      }
+      line.textContent = progressText;
+      body.appendChild(line);
+    }
 
     if (item.record) {
       const r = item.record;
@@ -594,6 +624,36 @@ function renderQueue() {
 function stateLabel(state) {
   const label = t(`queue.state.${state}`);
   return label.startsWith("queue.state.") ? state : label;
+}
+
+/** Texto de progreso: porcentaje, etapa del servidor y latido (heartbeat). */
+function progressTextFor(item) {
+  if (!["uploading", "processing", "paused"].includes(item.state)) return "";
+
+  const percent = Math.round(item.percent);
+  const stage = item.phase === "processing"
+    ? (item.heartbeat?.detail || "procesando")
+    : "subiendo";
+
+  const parts = [`${percent}%`, stage];
+
+  if (item.heartbeat?.elapsedMs) {
+    parts.push(`${(item.heartbeat.elapsedMs / 1000).toFixed(1)} s`);
+  }
+
+  // Latido del servidor: se refresca cada segundo mientras el request vive.
+  // Si supera 3 s, la operacion esta sin senal (posible cuelgue).
+  if (typeof item.heartbeat?.heartbeatMs === "number") {
+    const beat = item.heartbeat.heartbeatMs;
+    parts.push(beat > 3000 ? `sin senal hace ${(beat / 1000).toFixed(0)} s` : "vivo");
+  }
+
+  // Antiguedad de la etapa: cuanto lleva sin avanzar el porcentaje.
+  if (typeof item.heartbeat?.stageMs === "number" && item.heartbeat.stageMs > 20000) {
+    parts.push(`etapa sin avance hace ${(item.heartbeat.stageMs / 1000).toFixed(0)} s`);
+  }
+
+  return parts.join(" · ");
 }
 
 async function copyResultBase64(id) {

@@ -58,8 +58,11 @@ Razon del criterio:
 - SUCA es una herramienta **local de escritorio**: procesa imagenes de quien la usa, no
   entrada de terceros sin filtrar.
 - Los avisos son de denegacion de servicio por archivos corruptos, no de ejecucion de codigo.
-- El servicio ya limita el tamano de subida (`web.maxUploadMegabytes`) y reporta
-  `unsupported-image` cuando la decodificacion falla.
+- El servicio ya limita el tamano de subida (`web.maxUploadMegabytes`), rechaza imagenes
+  de mas de 120 MP leyendo solo la cabecera (`too-large`, HTTP 413) y reporta
+  `unsupported-image` cuando la decodificacion falla. Ademas, toda conversion tiene
+  tiempo limite (`web.convertTimeoutSeconds`) y el cliente corta la espera si el servidor
+  deja de responder.
 
 Cada ejecucion de CI imprime el informe (`dotnet list package --vulnerable`) para que el
 estado sea visible. Si en el futuro el proyecto necesita la serie 3.x, hay que comprar la

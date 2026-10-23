@@ -493,7 +493,11 @@ namespace SUCA_Compressor
                     MaxHeight = FormInt(form, "maxHeight") ?? effective.Conversion.MaxHeight,
                     RemoveMetadata = FormBool(form, "removeMetadata", effective.Conversion.RemoveMetadata ?? true),
                     Collection = FormValue(form, "collection", ""),
-                    CorrelationId = form["correlationId"].ToString()
+                    // El formulario manda; el header X-Correlation-Id sirve de respaldo
+                    // para clientes que solo lo envian como cabecera.
+                    CorrelationId = !string.IsNullOrWhiteSpace(form["correlationId"].ToString())
+                        ? form["correlationId"].ToString()
+                        : http.Request.Headers["X-Correlation-Id"].ToString()
                 };
 
                 // Perfil SUCA A-D (0-9): alimenta la matriz de factorizacion del kernel.
@@ -595,6 +599,32 @@ namespace SUCA_Compressor
                     return Results.NotFound();
 
                 return Results.Ok(BuildBase64Payload(id, variant ?? "converted", content));
+            });
+
+            // Progreso de una conversion en vuelo: etapa, porcentaje y heartbeat.
+            app.MapGet("/api/web/convert/progress", (string? correlationId, IImageConversionService conversion) =>
+            {
+                if (string.IsNullOrWhiteSpace(correlationId))
+                    return Results.BadRequest(new { error = "correlationId es obligatorio." });
+
+                ConversionProgress? progress = conversion.GetProgress(correlationId);
+                return progress is null
+                    ? Results.Json(
+                        new { error = "No hay progreso para esa correlacion.", errorCode = ConversionErrorCodes.RecordNotFound },
+                        statusCode: StatusCodes.Status404NotFound)
+                    : Results.Ok(new
+                    {
+                        correlationId = progress.CorrelationId,
+                        phase = progress.Phase,
+                        percent = progress.Percent,
+                        detail = progress.Detail,
+                        completed = progress.Completed,
+                        elapsedMs = progress.ElapsedMs,
+                        sinceUpdateMs = progress.SinceUpdateMs,
+                        heartbeatMs = progress.HeartbeatMs,
+                        startedAtUtc = progress.StartedAtUtc,
+                        updatedAtUtc = progress.UpdatedAtUtc
+                    });
             });
 
             // Cancelacion real de una conversion en vuelo (por correlacion).

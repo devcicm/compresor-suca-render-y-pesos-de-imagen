@@ -1853,3 +1853,15 @@ label[data-invalid="true"] select {
 .order-directory-input { flex: 1 1 240px; }
 .collection-name-input { max-width: 260px; }
 .folder-current { overflow-wrap: anywhere; }
+
+/* --- Progreso textual de la cola (porcentaje + heartbeat) --- */
+.q-progress-text {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+.q-progress-text.is-stalled {
+  color: var(--color-danger);
+  font-weight: 600;
+}

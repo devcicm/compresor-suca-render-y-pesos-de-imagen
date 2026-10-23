@@ -117,6 +117,26 @@ namespace SUCA_Compressor.Application.Conversion
         public bool Exists { get; set; }
     }
 
+    /// <summary>Progreso observable de una conversion en vuelo (por correlacion).</summary>
+    public sealed class ConversionProgress
+    {
+        public string CorrelationId { get; init; } = "";
+        public string Phase { get; set; } = "queued";
+        public int Percent { get; set; }
+        public string? Detail { get; set; }
+        public DateTimeOffset StartedAtUtc { get; init; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset UpdatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+
+        /// <summary>Ultimo latido del request: se refresca cada segundo aunque la etapa no avance.</summary>
+        public DateTimeOffset HeartbeatAtUtc { get; set; } = DateTimeOffset.UtcNow;
+
+        public bool Completed { get; set; }
+
+        public long ElapsedMs => (long)(DateTimeOffset.UtcNow - StartedAtUtc).TotalMilliseconds;
+        public long SinceUpdateMs => (long)(DateTimeOffset.UtcNow - UpdatedAtUtc).TotalMilliseconds;
+        public long HeartbeatMs => (long)(DateTimeOffset.UtcNow - HeartbeatAtUtc).TotalMilliseconds;
+    }
+
     public sealed class CollectionSummary
     {
         public string Collection { get; set; } = "";
@@ -393,12 +413,15 @@ namespace SUCA_Compressor.Application.Conversion
         Task<Result> RevealInExplorerAsync(Guid id, string variant, CancellationToken cancellationToken = default);
         Result RevealStorageRoot();
         Result<bool> CancelConversion(string correlationId);
+        ConversionProgress? GetProgress(string correlationId);
         Task<Result<string>> CreateCollectionAsync(string name, CancellationToken cancellationToken = default);
         Task<Result<string>> RenameCollectionAsync(string currentName, string newName, CancellationToken cancellationToken = default);
     }
 
-    public sealed class ImageConversionService : IImageConversionService
+    public sealed class ImageConversionService : IImageConversionService, IDisposable
     {
+        /// <summary>Limite de pixeles por imagen (120 MP). Evita bloqueos por decodificacion.</summary>
+        private const long MaxPixels = 120_000_000;
         private static readonly ActivitySource ActivitySource = new("SUCA.Conversion");
         private static readonly string[] KnownImageExtensions =
             { ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tiff" };
@@ -430,11 +453,40 @@ namespace SUCA_Compressor.Application.Conversion
             _observability = observability;
             _logger = logger;
             _registry = registry;
+
+            // Barrido periodico: el mapa de progreso no debe crecer sin limite
+            // con cada conversion completada.
+            _progressSweeper = new System.Threading.Timer(
+                _ => SweepProgress(),
+                null,
+                TimeSpan.FromMinutes(1),
+                TimeSpan.FromMinutes(1));
         }
+
+        private readonly System.Threading.Timer _progressSweeper;
+
+        /// <summary>Descarta estados de progreso terminados hace mas de 2 minutos.</summary>
+        private void SweepProgress()
+        {
+            foreach (var pair in _progress)
+            {
+                if (pair.Value.Completed &&
+                    pair.Value.SinceUpdateMs > TimeSpan.FromMinutes(2).TotalMilliseconds)
+                {
+                    _progress.TryRemove(pair.Key, out _);
+                }
+            }
+        }
+
+        public void Dispose() => _progressSweeper?.Dispose();
 
         // Conversiones en vuelo por correlacion: permite a otra peticion (o al
         // propio panel de cola) cancelar con efectos reales mientras aun corre.
         private readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellable =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        // Progreso observable por correlacion (etapa + porcentaje + heartbeat).
+        private readonly ConcurrentDictionary<string, ConversionProgress> _progress =
             new(StringComparer.OrdinalIgnoreCase);
 
         public async Task<Result<ConversionRecord>> ConvertAsync(ConvertImageCommand command, Stream content, CancellationToken cancellationToken = default)
@@ -462,6 +514,29 @@ namespace SUCA_Compressor.Application.Conversion
             _cancellable[correlationId] = externalCancel;
             using var linkedCancel = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, externalCancel.Token);
             CancellationToken cancelToken = linkedCancel.Token;
+
+            // Progreso observable: la UI lo consulta para porcentaje real y heartbeat.
+            var progress = new ConversionProgress { CorrelationId = correlationId };
+            _progress[correlationId] = progress;
+
+            // Latido: una etapa (codificar o verificar) puede tardar segundos sin
+            // avanzar. Este sello se refresca cada segundo mientras el request
+            // sigue vivo y permite distinguir "etapa larga" de "proceso colgado".
+            using var heartbeatTimer = new System.Threading.Timer(
+                static state => ((ConversionProgress)state!).HeartbeatAtUtc = DateTimeOffset.UtcNow,
+                progress,
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromSeconds(1));
+
+            void ReportProgress(int percent, string phase, string? detail = null)
+            {
+                progress.Percent = Math.Clamp(percent, 0, 100);
+                progress.Phase = phase;
+                progress.Detail = detail;
+                progress.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            }
+
+            ReportProgress(5, "leyendo", "recibiendo archivo");
 
             _observability.RecordStart(operation, correlationId);
             using var activity = ActivitySource.StartActivity("suca.convert");
@@ -500,8 +575,23 @@ namespace SUCA_Compressor.Application.Conversion
                 if (sourceBytes.Length == 0)
                 {
                     Transition(ConversionJobState.Failed);
+                    ReportProgress(100, "error", "archivo vacio");
+                    progress.Completed = true;
                     _observability.RecordFailure(operation, new InvalidOperationException("Archivo vacio."), correlationId);
                     return Result<ConversionRecord>.Fail("El archivo esta vacio.", ConversionErrorCodes.EmptyFile);
+                }
+
+                ReportProgress(10, "preparando", $"{sourceBytes.Length / 1024} KB recibidos");
+
+                // Guardia de tamano: una imagen enorme puede bloquear la codificacion.
+                // Se mide con Identify (solo cabecera) antes de decodificar de verdad.
+                Result? tooLarge = CheckPixelBudget(sourceBytes);
+                if (tooLarge is not null)
+                {
+                    Transition(ConversionJobState.Failed);
+                    ReportProgress(100, "error", tooLarge.Error);
+                    progress.Completed = true;
+                    return Result<ConversionRecord>.Fail(tooLarge.Error!, tooLarge.ErrorCode);
                 }
 
                 string safeName = SanitizeFileName(command.FileName);
@@ -527,13 +617,26 @@ namespace SUCA_Compressor.Application.Conversion
                 };
 
                 string itemDir = Path.Combine(root, ConversionStorageOptions.ImagesFolderName, record.Id.ToString("N"));
+                // Puente entre el progreso del kernel (0-100) y el total del request (10-95).
+                command.Options ??= new SucaOptions { EnablePesoMosca = false };
+                command.Options.Progress = (percent, phase) =>
+                    ReportProgress(10 + (int)Math.Round(percent * 0.85), phase);
+
+                // El motor SUCA reporta sus etapas desde el kernel; el directo no tiene
+                // desglose, asi que se marca la codificacion antes de empezar.
+                if (!suca)
+                    ReportProgress(40, "codificando");
+
                 Result<ConversionRecord> outcome = suca
                     ? await FillSucaResultAsync(record, command, sourceBytes, originalExtension, stagingDir, itemDir, format, cancelToken).ConfigureAwait(false)
                     : await FillDirectResultAsync(record, sourceBytes, originalExtension, stagingDir, itemDir, format, cancelToken).ConfigureAwait(false);
+                ReportProgress(96, "registrando", "guardando en la galeria");
 
                 if (!outcome.IsSuccess)
                 {
                     Transition(ConversionJobState.Failed);
+                    ReportProgress(100, "error", outcome.Error);
+                    progress.Completed = true;
                     _observability.RecordFailure(operation, new InvalidOperationException(outcome.Error), correlationId);
                     return outcome;
                 }
@@ -546,12 +649,16 @@ namespace SUCA_Compressor.Application.Conversion
                     await _registry.EnsureAsync(record.Collection, cancelToken).ConfigureAwait(false);
 
                 await _gallery.AddAsync(record, cancelToken).ConfigureAwait(false);
+                ReportProgress(100, "listo", $"{record.ConvertedBytes / 1024} KB");
+                progress.Completed = true;
                 _observability.RecordSuccess(operation, $"{record.OriginalFileName} -> {record.Format} ({record.SavingPercent:F1}% saved)", correlationId);
                 return Result<ConversionRecord>.Ok(record);
             }
             catch (OperationCanceledException)
             {
                 Transition(ConversionJobState.Cancelled);
+                ReportProgress(100, "cancelada");
+                progress.Completed = true;
                 _observability.RecordCancellation(operation, correlationId);
                 return Result<ConversionRecord>.Fail("Conversion cancelada.", ConversionErrorCodes.Cancelled);
             }
@@ -559,6 +666,8 @@ namespace SUCA_Compressor.Application.Conversion
                                           or SixLabors.ImageSharp.InvalidImageContentException)
             {
                 Transition(ConversionJobState.Failed);
+                ReportProgress(100, "error", "imagen no soportada");
+                progress.Completed = true;
                 _observability.RecordFailure(operation, ex, correlationId);
                 return Result<ConversionRecord>.Fail(
                     $"El archivo no es una imagen soportada: {ex.Message}",
@@ -567,6 +676,8 @@ namespace SUCA_Compressor.Application.Conversion
             catch (Exception ex)
             {
                 Transition(ConversionJobState.Failed);
+                ReportProgress(100, "error", ex.Message);
+                progress.Completed = true;
                 _observability.RecordFailure(operation, ex, correlationId);
                 _logger.LogError(ex, "Image conversion failed for {FileName} (engine={Engine})", command.FileName, command.Engine);
                 return Result<ConversionRecord>.Fail(ex.Message, ConversionErrorCodes.IoError);
@@ -597,6 +708,55 @@ namespace SUCA_Compressor.Application.Conversion
             source.Cancel();
             _observability.RecordSuccess("convert-cancel-requested", correlationId, correlationId);
             return Result<bool>.Ok(true);
+        }
+
+        /// <summary>Progreso de una conversion en vuelo (o su ultimo estado). Null si no existe.</summary>
+        public ConversionProgress? GetProgress(string correlationId)
+        {
+            if (string.IsNullOrWhiteSpace(correlationId))
+                return null;
+
+            string key = correlationId.Trim();
+            if (!_progress.TryGetValue(key, out ConversionProgress? progress))
+                return null;
+
+            // Limpieza perezosa: los estados terminados se conservan 5 minutos.
+            if (progress.Completed && progress.SinceUpdateMs > TimeSpan.FromMinutes(5).TotalMilliseconds)
+            {
+                _progress.TryRemove(key, out _);
+                return null;
+            }
+
+            return progress;
+        }
+
+        /// <summary>
+        /// Rechaza imagenes que exceden el presupuesto de pixeles antes de decodificarlas
+        /// completas: una imagen enorme puede tardar minutos o agotar memoria.
+        /// </summary>
+        private Result? CheckPixelBudget(byte[] sourceBytes)
+        {
+            try
+            {
+                using var probe = new MemoryStream(sourceBytes, writable: false);
+                var info = Image.Identify(probe);
+                if (info is null)
+                    return null; // deja que la decodificacion normal reporte unsupported-image
+
+                long pixels = (long)info.Width * info.Height;
+                if (pixels > MaxPixels)
+                {
+                    return Result.Fail(
+                        $"La imagen tiene {info.Width}x{info.Height} ({pixels / 1_000_000} MP) y el limite es {MaxPixels / 1_000_000} MP. Redimensionala antes de convertirla.",
+                        ConversionErrorCodes.TooLarge);
+                }
+
+                return null;
+            }
+            catch
+            {
+                return null; // cabecera no reconocida: lo maneja la decodificacion
+            }
         }
 
         public Task<IReadOnlyList<ConversionRecord>> ListAsync(CancellationToken cancellationToken = default) =>

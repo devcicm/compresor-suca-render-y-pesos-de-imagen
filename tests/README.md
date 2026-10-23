@@ -22,6 +22,7 @@ Estas piezas son puras o deterministas y ya existen; son los candidatos inmediat
 7. `JsonConversionGalleryStore` / `JsonConversionOrderStore`: escritura atomica, reintentos de `File.Replace` y concurrencia (varios escritores simultaneos no pierden registros).
 8. `CollectionsRegistryStore` + CRUD de `ImageConversionService`: crear coleccion vacia (y duplicado `collection-exists`), renombrar (mueve registros y registro), disolver (mueve a `general` y elimina del registro), coleccion `general` reservada, mezcla del registro en el listado y autorregistro al convertir/mover.
 9. Cancelacion por correlacion en `ImageConversionService`: `CancelConversion` sobre una conversion en vuelo produce `Cancelled` (sin registro en galeria), y devuelve `record-not-found` si ya termino; el mapa se limpia al finalizar cada conversion.
+10. Progreso y guardias de `ImageConversionService`: `GetProgress` devuelve la etapa/porcentaje con `heartbeatMs` bajo mientras corre y `null` tras el barrido; una imagen sobre 120 MP falla con `too-large` sin decodificarse; `SucaOptions.Progress` recibe porcentajes monotonicos (el callback que lanza no rompe la conversion).
 
 Convenciones para las suites:
 

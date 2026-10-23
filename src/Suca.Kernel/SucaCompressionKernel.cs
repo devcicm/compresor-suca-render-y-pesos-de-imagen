@@ -215,6 +215,12 @@ namespace SUCA_Compressor
         // aunque cumpla el peso (texto/huella pueden volverse ilegibles).
         public double MinLegibilitySsim { get; set; } = 0.90;
         public double MinLegibilityEdgeRetention { get; set; } = 0.70;
+
+        /// <summary>
+        /// Progreso por etapas (0-100 y nombre de la fase). Permite que la UI muestre un
+        /// porcentaje real y un heartbeat en vez de una barra indeterminada.
+        /// </summary>
+        public Action<int, string>? Progress { get; set; }
     }
 
     public sealed class ImageAnalysis
@@ -402,12 +408,20 @@ namespace SUCA_Compressor
     // =========================================================
     public static class ImageAnalyzer
     {
-        public static ImageAnalysis Analyze(string path, CancellationToken cancellationToken = default)
+        /// <param name="onProgress">
+        /// Avance interno 0-100 (carga, matriz de grises, senales). Permite que la UI
+        /// muestre movimiento durante el analisis, que en imagenes grandes domina el tiempo.
+        /// </param>
+        public static ImageAnalysis Analyze(
+            string path,
+            CancellationToken cancellationToken = default,
+            Action<int>? onProgress = null)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             using var img = Image.Load<Rgba32>(path);
             img.Mutate(x => x.AutoOrient());
+            onProgress?.Invoke(35);
 
             var analysis = new ImageAnalysis
             {
@@ -424,6 +438,7 @@ namespace SUCA_Compressor
 
             // Convertir a escala de grises local
             var gray = ToGrayMatrix(img, cancellationToken);
+            onProgress?.Invoke(70);
 
             analysis.MeanLuma = Mean(gray);
             analysis.StdLuma = StdDev(gray, analysis.MeanLuma);
@@ -434,6 +449,7 @@ namespace SUCA_Compressor
             analysis.ForegroundRatio = ForegroundRatio(gray);
             analysis.RidgeLikeScore = RidgeLikeScore(gray);
             analysis.Kind = Classify(gray, analysis);
+            onProgress?.Invoke(100);
 
             return analysis;
         }
@@ -1558,10 +1574,18 @@ namespace SUCA_Compressor
             var totalSw = Stopwatch.StartNew();
 
             var swAnalyze = Stopwatch.StartNew();
-            var analysis = ImageAnalyzer.Analyze(inputPath, cancellationToken);
+            Report(options, 12, "analizando");
+            var analysis = ImageAnalyzer.Analyze(
+                inputPath,
+                cancellationToken,
+                // El analisis es la etapa dominante en imagenes grandes: se
+                // traduce su avance 0-100 al tramo 12-22 del proceso.
+                step => Report(options, 12 + (int)Math.Round(step * 0.10), "analizando"));
             swAnalyze.Stop();
+            Report(options, 22, "analizando");
 
             var decision = SucaDecisionEngine.Decide(profile, analysis, options);
+            Report(options, 25, "decidiendo");
 
             var result = new CompressionResult
             {
@@ -1584,6 +1608,7 @@ namespace SUCA_Compressor
             using var image = Image.Load<Rgba32>(inputPath);
             image.Mutate(x => x.AutoOrient());
             swLoad.Stop();
+            Report(options, 35, "cargando");
 
             // Limpieza de metadatos
             if (decision.RemoveMetadata)
@@ -1606,6 +1631,9 @@ namespace SUCA_Compressor
                 }));
             }
             swResize.Stop();
+
+            Report(options, 50, "redimensionando");
+            Report(options, 55, "codificando");
 
             // Guardado inicial + refinamiento peso mosca
             var swSave = Stopwatch.StartNew();
@@ -1653,6 +1681,8 @@ namespace SUCA_Compressor
 
             swSave.Stop();
 
+            Report(options, 85, "guardando");
+
             var finfo = new FileInfo(outputPath);
             result.OutputBytes = finfo.Length;
             result.OutputKb = finfo.Length / 1024.0;
@@ -1673,7 +1703,11 @@ namespace SUCA_Compressor
             }
 
             if (options.GenerateIntegrityReport)
+            {
+                Report(options, 90, "verificando");
                 result.Integrity = IntegrityValidator.Compare(inputPath, outputPath, cancellationToken);
+                Report(options, 95, "verificando");
+            }
 
             // Legibilidad: en texto/UI/huella exige bordes y SSIM; en foto basta el SSIM
             // (perder alta frecuencia es esperable y no afecta a "leer" la imagen).
@@ -1783,6 +1817,7 @@ namespace SUCA_Compressor
             for (int i = 0; i < options.MaxRefineIterations && kb > target; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                Report(options, Math.Min(84, 58 + (i * 4)), "codificando");
 
                 bool loweredQuality = false;
 
@@ -1832,6 +1867,19 @@ namespace SUCA_Compressor
         }
 
         private static double FileSizeKb(string path) => new FileInfo(path).Length / 1024.0;
+
+        /// <summary>Notifica progreso sin romper la conversion si el consumidor falla.</summary>
+        private static void Report(SucaOptions options, int percent, string phase)
+        {
+            try
+            {
+                options.Progress?.Invoke(Math.Clamp(percent, 0, 100), phase);
+            }
+            catch
+            {
+                // un callback de progreso no debe tumbar el trabajo
+            }
+        }
 
         /// <summary>
         /// Busca la mejor combinacion (escala, calidad) que quepa en el techo de peso.
@@ -1885,6 +1933,7 @@ namespace SUCA_Compressor
                 for (int index = 0; index < candidateLimit; index++)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    Report(options, Math.Min(84, 55 + (index * 10)), "optimizando");
 
                     double scale = ladder[index];
                     int nw = (int)Math.Round(source.Width * scale);

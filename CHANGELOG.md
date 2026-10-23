@@ -9,6 +9,20 @@ Todavia no hay release publicada: este es el estado actual del codigo de `main`.
 
 ### Anadido
 
+**Progreso observable y proteccion contra cuelgues**
+- **Porcentaje real y heartbeat** durante la conversion: el kernel reporta por etapas
+  (`analizando`, `decidiendo`, `cargando`, `redimensionando`, `codificando`,
+  `optimizando`, `verificando`, `registrando`) y `GET /api/web/convert/progress?correlationId=...`
+  devuelve `percent`, `phase`, `detail`, `elapsedMs`, `sinceUpdateMs` y `heartbeatMs`
+  (latido cada segundo mientras el request vive). La cola muestra `57% · codificando ·
+  3.2 s · vivo` y marca `sin senal` si el latido supera 3 s.
+- **Cortes de seguridad**: el cliente aborta a `web.convertTimeoutSeconds + 20 s`; una
+  subida sin bytes durante 30 s se cancela con un mensaje claro; el servidor ya cancelaba
+  a `web.convertTimeoutSeconds` (180 s por defecto).
+- **Guardia de pixeles**: las imagenes de mas de 120 MP se rechazan con `too-large`
+  (HTTP 413) leyendo solo la cabecera, antes de decodificarlas, para que una imagen enorme
+  no bloquee el proceso.
+
 **Motor SUCA: optimizacion de la conversion bajo un techo de peso**
 - **Modo optimizado** (`optimize=true` en REST/MCP y casilla "Buscar la mejor calidad que
   quepa" en la UI): explora varias **escalas** y, para cada una, la **maxima calidad que

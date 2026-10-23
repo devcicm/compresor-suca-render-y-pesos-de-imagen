@@ -193,6 +193,14 @@ js/main.js       Estado global, ajustes, toasts, sondeo de /health y utilidades
   `Ctrl+Shift+C`). Los botones aparecen solo cuando tienen sentido.
 - Las opciones visibles quedan **fijadas** (`optionsPinned`) cuando el usuario las edita o
   aplica un preset, para que una recarga de ajustes no las pise.
+- **Progreso con porcentaje y heartbeat**: `uploadWithProgress` (en `js/main.js`) reporta
+  bytes subidos (0-55%), luego sondea `GET /api/web/convert/progress` cada 500 ms y mapea el
+  porcentaje del servidor al tramo 55-99%. La linea bajo la barra muestra
+  `57% · codificando · 3.2 s · vivo`; si `heartbeatMs > 3000` cambia a
+  `sin senal hace N s` con clase `is-stalled`, y si la etapa lleva mas de 20 s sin avanzar
+  anade `etapa sin avance` (util cuando el analisis de una imagen enorme domina el tiempo). La barra solo usa `data-indeterminate` cuando aun no hay
+  heartbeat del servidor. Un vigilante aborta subidas sin bytes durante 30 s o sondeos
+  fallidos durante 25 s, y `xhr.timeout` se deriva de `web.convertTimeoutSeconds`.
 
 ## Componentes interactivos del Compresor (extras)
 
