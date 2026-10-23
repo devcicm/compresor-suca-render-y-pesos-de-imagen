@@ -21,22 +21,26 @@ coloque un proxy inverso con autenticacion y limite las rutas anteriores.
 ## No se abren las ventanas del Explorador
 
 Es una herramienta de escritorio: necesita una sesion de Windows con Explorer disponible.
+Antes de tocar nada, pide el diagnostico:
+
+```powershell
+curl "http://127.0.0.1:5077/api/web/diagnostics/reveal?path=C:\ruta\archivo.webp"
+```
+
+Devuelve `sessionId`, `interactive`, `elevated`, `explorerExists`, `explorerProcesses`,
+`pathExists`, `revealed` (resultado real de `SHOpenFolderAndSelectItems`) y una nota.
 
 | Sintoma | Causa | Que hace SUCA |
 | --- | --- | --- |
-| "Abrir" no abre nada | El proceso se lanzo sin `UseShellExecute` y fuera de la sesion del shell | Arranca `explorer.exe` con ruta absoluta y shell execute |
-| Abre la carpeta pero no selecciona el archivo | `/select,` no es soportado en algunos sistemas o con rutas largas | Cae en cascada a abrir la carpeta contenedora |
-| No abre nada y la UI avisa | No hay escritorio interactivo: servicio, contenedor o sesion 0 | Devuelve la ruta en el error y la **copia al portapapeles** |
+| `revealed: false` | Windows rechazo la peticion (tipicamente SUCA **elevado**, sin escritorio interactivo, o ruta inexistente) | Lo informa y devuelve la ruta |
+| `elevated: true` | La app corre como administrador | Cierra SUCA y ejecutalo sin elevacion: es la causa mas comun |
+| `interactive: false` / `sessionId: 0` | Servicio o contenedor sin escritorio | Usa "Copiar ruta" |
+| `revealed: true` y no ves ventana | La ventana se abrio detras de otras | Revisa la barra de tareas |
+| `pathExists: false` | El archivo se borro (por ejemplo al limpiar `runtime/`) | Vuelve a convertir la imagen |
 
-Si ocurre en tu equipo:
-
-1. Comprueba que ejecutas SUCA en tu sesion normal de Windows, no como servicio ni desde
-   un contenedor o WSL.
-2. Si Explorador esta abierto con privilegios distintos a los de SUCA (por ejemplo uno
-   elevado y SUCA sin elevar), abre una ventana de Explorador normal antes de usar "Abrir".
-3. Siempre tienes alternativa: **Copiar ruta** (Galeria, Detalle o cola) y pegarla en el
-   Explorador o en el Explorador de archivos. El endpoint `GET /api/web/images/{id}/path`
-   devuelve la ruta sin abrir nada.
+La apertura usa `SHOpenFolderAndSelectItems` (API nativa, la misma de "Mostrar en carpeta") y
+cae en cascada a `explorer.exe /select` y a abrir la carpeta. **Copiar ruta** siempre esta
+disponible: el endpoint `GET /api/web/images/{id}/path` devuelve la ruta sin abrir nada.
 
 ---
 

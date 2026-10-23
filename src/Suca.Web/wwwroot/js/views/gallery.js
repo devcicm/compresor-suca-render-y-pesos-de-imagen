@@ -740,8 +740,7 @@ async function revealFile(id, variant) {
         toast(`No se pudo abrir el Explorador. Ruta copiada al portapapeles: ${body.path}`, "warn", 9000);
         return;
       }
-      throw new Error(body.error || `HTTP ${response.status}`);
-    }
+      throw new Error(body.error || `HTTP ${response.status}`);    }
     toast("Archivo abierto en el Explorador.", "info");
   } catch (error) {
     toast(`No se pudo abrir el Explorador: ${error.message}`, "error", 8000);

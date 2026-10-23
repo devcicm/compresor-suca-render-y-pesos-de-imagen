@@ -1305,13 +1305,22 @@ namespace SUCA_Compressor.Application.Conversion
                 return Result.Fail("No hay ruta para abrir.", ConversionErrorCodes.IoError);
 
             string fullPath = Path.GetFullPath(path);
+
+            // 1) API nativa de Windows (la misma que "Mostrar en carpeta"): devuelve un
+            // HRESULT fiable y no depende de la linea de comandos de explorer.exe.
+            if (ShellReveal.TryReveal(fullPath))
+            {
+                _observability.RecordSuccess("reveal", $"shell: {variant ?? "archivo"}: {fullPath}", fullPath);
+                return Result.Ok();
+            }
+
             string? explorer = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
 
             if (!File.Exists(explorer))
                 explorer = "explorer.exe";
 
-            // 1) Seleccionar el archivo concreto.
+            // 2) Respaldo: explorer.exe /select (util en equipos donde la API falla).
             Result? selected = TryStartExplorer(explorer, $"/select,\"{fullPath}\"");
             if (selected is not null)
             {
@@ -1319,7 +1328,7 @@ namespace SUCA_Compressor.Application.Conversion
                 return Result.Ok();
             }
 
-            // 2) Abrir la carpeta contenedora (suele funcionar aunque /select no).
+            // 3) Abrir la carpeta contenedora (suele funcionar aunque /select no).
             string? directory = Directory.Exists(fullPath) ? fullPath : Path.GetDirectoryName(fullPath);
             if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
             {
@@ -1335,7 +1344,8 @@ namespace SUCA_Compressor.Application.Conversion
             return Result.Fail(
                 $"No se pudo abrir el Explorador en {fullPath}. " +
                 "Comprueba que SUCA se ejecute en una sesion de escritorio con Explorer disponible " +
-                "(no como servicio ni en elevated sin Explorer abierto); mientras tanto puedes copiar la ruta.",
+                "(no como servicio ni elevado); mientras tanto puedes copiar la ruta. " +
+                "Diagnostico: GET /api/web/diagnostics/reveal",
                 ConversionErrorCodes.IoError);
         }
 

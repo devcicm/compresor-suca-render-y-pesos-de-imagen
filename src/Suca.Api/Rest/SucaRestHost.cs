@@ -717,6 +717,10 @@ namespace SUCA_Compressor
                         statusCode: MapErrorCodeToStatus(outcome.ErrorCode));
             });
 
+            // Diagnostico de la apertura del Explorador: elevacion, sesion y resultado real.
+            app.MapGet("/api/web/diagnostics/reveal", (string? path) =>
+                Results.Ok(ShellReveal.Diagnose(path)));
+
             app.MapGet("/api/web/collections/{name}/paths", async (string name, string? variant, IImageConversionService conversion, CancellationToken ct) =>
             {
                 var paths = await conversion

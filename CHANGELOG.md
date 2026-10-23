@@ -68,6 +68,11 @@ Todavia no hay release publicada: este es el estado actual del codigo de `main`.
 
 ### Corregido
 
+- **"Abrir carpeta" podia no mostrar ventana**: la apertura pasa a usar la API nativa
+  `SHOpenFolderAndSelectItems` (la de "Mostrar en carpeta"), que devuelve un HRESULT real y
+  no depende de la linea de comandos de `explorer.exe`; se mantiene la cascada a
+  `explorer.exe /select` y a abrir la carpeta. Nuevo diagnostico
+  `GET /api/web/diagnostics/reveal?path=` (elevacion, sesion, explorer, resultado real).
 - **La calidad pedida se ignoraba en el motor SUCA**: con `quality=10` y `quality=90` el
   archivo salia identico, aunque el registro mostraba la calidad pedida. Ahora
   `SucaOptions.QualityOverride` la aplica (los suelos por contenido solo actuan si no hay
