@@ -16,6 +16,20 @@ namespace SUCA_Compressor.Application.Settings
 
     // Nullable members mean "not configured": the effective value falls back
     // to the system scope, then to SucaSettings.DefaultValue.
+    // Preset reutilizable de opciones de conversion. Vive en los ajustes para que
+    // la UI (web) y la consola puedan aplicar el mismo perfil con un solo paso.
+    public sealed class ConversionPreset
+    {
+        public string? Name { get; set; }
+        public string? Engine { get; set; }
+        public string? Format { get; set; }
+        public int? Quality { get; set; }
+        public int? MaxWidth { get; set; }
+        public int? MaxHeight { get; set; }
+        public bool? RemoveMetadata { get; set; }
+        public string? Collection { get; set; }
+    }
+
     public sealed class ConversionSettings
     {
         public string? Engine { get; set; }
@@ -25,6 +39,9 @@ namespace SUCA_Compressor.Application.Settings
         public int? MaxHeight { get; set; }
         public bool? RemoveMetadata { get; set; }
         public string? OutputDirectory { get; set; }
+
+        /// <summary>Perfiles guardados de conversion (Web optimizado, Thumbnail, ...).</summary>
+        public List<ConversionPreset> Presets { get; set; } = new();
     }
 
     public sealed class WebSettings
@@ -279,6 +296,47 @@ namespace SUCA_Compressor.Application.Settings
                 && !SucaFormatConverter.TryParseFormat(settings.Conversion.Format, out _))
             {
                 throw new ArgumentException("conversion.format solo admite 'webp', 'jpeg' o 'png'.");
+            }
+
+            ValidatePresets(settings.Conversion.Presets);
+        }
+
+        private static void ValidatePresets(List<ConversionPreset>? presets)
+        {
+            if (presets is null)
+                return;
+
+            if (presets.Count > 24)
+                throw new ArgumentException("conversion.presets admite un maximo de 24 presets.");
+
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int index = 0; index < presets.Count; index++)
+            {
+                ConversionPreset preset = presets[index];
+                string name = preset.Name?.Trim() ?? "";
+                if (name.Length is 0 or > 40)
+                    throw new ArgumentException($"conversion.presets[{index}].Name debe tener entre 1 y 40 caracteres.");
+
+                if (!names.Add(name))
+                    throw new ArgumentException($"El preset '{name}' esta duplicado.");
+
+                if (preset.Quality is < 1 or > 100)
+                    throw new ArgumentException($"El preset '{name}' tiene una calidad fuera de rango (1-100).");
+
+                if (!string.IsNullOrWhiteSpace(preset.Format)
+                    && !SucaFormatConverter.TryParseFormat(preset.Format, out _))
+                {
+                    throw new ArgumentException($"El preset '{name}' usa un formato no soportado ({preset.Format}).");
+                }
+
+                if (!string.IsNullOrWhiteSpace(preset.Engine)
+                    && preset.Engine.Trim().ToLowerInvariant() is not ("direct" or "suca"))
+                {
+                    throw new ArgumentException($"El preset '{name}' solo admite motor 'direct' o 'suca'.");
+                }
+
+                if (preset.MaxWidth is <= 0 or > 20000 || preset.MaxHeight is <= 0 or > 20000)
+                    throw new ArgumentException($"El preset '{name}' tiene dimensiones fuera de rango (1-20000).");
             }
         }
 

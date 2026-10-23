@@ -10,6 +10,7 @@ const queue = [];           // { key, file, previewUrl, state, percent, phase, r
 let converting = false;
 let globalPaused = false;
 let initialized = false;
+let optionsPinned = false;  // el usuario edito opciones o aplico un preset
 
 export function initCompressView() {
   if (initialized) return;
@@ -34,6 +35,26 @@ export function initCompressView() {
     input.value = "";
   });
 
+  // Pegar imagenes desde el portapapeles (Ctrl+V) en cualquier punto de la pagina.
+  document.addEventListener("paste", (event) => {
+    const target = event.target;
+    if (target instanceof Element && target.matches("input, textarea")) return;
+
+    const items = event.clipboardData?.items || [];
+    const files = [];
+    for (const item of items) {
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+
+    if (files.length === 0) return;
+    event.preventDefault();
+    addFiles(files);
+    toast(`Se pegaron ${files.length} imagen(es).`, "info");
+  });
+
   ["dragenter", "dragover"].forEach((name) =>
     dropzone.addEventListener(name, (event) => {
       event.preventDefault();
@@ -47,7 +68,7 @@ export function initCompressView() {
     }));
 
   dropzone.addEventListener("drop", (event) => {
-    if (event.dataTransfer && event.dataTransfer.files) addFiles(event.dataTransfer.files);
+    void handleDrop(event.dataTransfer);
   });
 
   el("convert-button").addEventListener("click", () => void convertQueue());
@@ -56,6 +77,15 @@ export function initCompressView() {
   el("select-all-button").addEventListener("click", toggleSelectAll);
   el("apply-to-selected-button").addEventListener("click", applyOptionsToSelected);
   el("remove-selected-button").addEventListener("click", removeSelected);
+  el("retry-failed-button").addEventListener("click", retryFailed);
+  el("clear-finished-button").addEventListener("click", clearFinished);
+  el("cancel-all-button").addEventListener("click", cancelAllItems);
+
+  el("preset-select").addEventListener("change", onPresetSelected);
+  el("preset-apply").addEventListener("click", () => applyPresetToAll());
+  el("preset-apply-selected").addEventListener("click", () => applyPresetToSelected());
+  el("preset-save").addEventListener("click", () => void savePresetFromOptions());
+  el("preset-delete").addEventListener("click", () => void deletePreset());
 
   el("browse-folder-button").addEventListener("click", () => void openFolderBrowser());
   el("order-validate").addEventListener("click", () => void validateOrder());
@@ -84,9 +114,24 @@ export function initCompressView() {
 
   enableListNavigation(el("queue-list"), ".queue-item");
 
-  document.addEventListener("suca:settings", applyDefaults);
+  // Los ajustes llegan despues del arranque: la lista de presets se repinta y
+  // solo se aplican los valores por defecto si el usuario no toco las opciones.
+  document.addEventListener("suca:settings", () => {
+    renderPresetList();
+    if (!optionsPinned) applyDefaults();
+  });
   document.addEventListener("suca:collections", fillCollectionList);
   refreshCollectionList();
+  renderPresetList();
+
+  // Cualquier edicion manual fija las opciones: applyDefaults deja de pisarlas.
+  ["engine", "format", "quality", "max-width", "max-height", "collection", "remove-metadata"]
+    .forEach((id) => {
+      const control = el(id);
+      if (!control) return;
+      control.addEventListener("input", pinOptions);
+      control.addEventListener("change", pinOptions);
+    });
 
   el("quality").addEventListener("input", () => {
     el("quality-out").textContent = el("quality").value;
@@ -98,6 +143,11 @@ export function initCompressView() {
   });
 
   el("order-submit").addEventListener("click", () => void submitOrder());
+}
+
+/* Marca que las opciones visibles ya no siguen a los ajustes por defecto. */
+function pinOptions() {
+  optionsPinned = true;
 }
 
 /* Atajo "cancelar todo": detiene lo que este en curso y deja el resto en espera. */
@@ -360,6 +410,15 @@ function renderQueue() {
   el("select-all-button").hidden = editableCount === 0;
   el("apply-to-selected-button").hidden = editableCount === 0;
   el("remove-selected-button").hidden = editableCount === 0;
+
+  const failedCount = queue.filter((item) => item.state === "error").length;
+  el("retry-failed-button").hidden = failedCount === 0;
+
+  const finishedCount = queue.filter((item) => ["done", "cancelled", "error"].includes(item.state)).length;
+  el("clear-finished-button").hidden = finishedCount === 0;
+
+  el("cancel-all-button").hidden = !queue.some((item) =>
+    ["pending", "waiting", "uploading", "processing"].includes(item.state));
 
   for (const item of queue) {
     const li = document.createElement("li");
@@ -869,4 +928,326 @@ async function validateOrder() {
     statusEl.textContent = "";
     toast(`Carpeta invalida: ${error.message}`, "error");
   }
+}
+
+/* ============================== Carpetas y portapapeles ============================== */
+
+/* Acepta archivos sueltos y carpetas completas (recursivo) al arrastrar. */
+async function handleDrop(transfer) {
+  if (!transfer) return;
+
+  const entries = Array.from(transfer.items || [])
+    .map((item) => (item.webkitGetAsEntry ? item.webkitGetAsEntry() : null))
+    .filter(Boolean);
+
+  if (entries.length === 0) {
+    if (transfer.files) addFiles(transfer.files);
+    return;
+  }
+
+  const progress = el("dropzone-progress");
+  const files = [];
+
+  progress.hidden = false;
+  progress.textContent = "Leyendo carpetas...";
+
+  try {
+    for (const entry of entries) {
+      await collectEntry(entry, files, (count) => {
+        progress.textContent = `Leyendo ${count} archivo(s)...`;
+      });
+    }
+
+    if (files.length === 0) {
+      progress.textContent = "";
+      toast("La carpeta no contiene imagenes.", "warn");
+      return;
+    }
+
+    const folders = entries.filter((entry) => entry.isDirectory).length;
+    progress.textContent = "";
+    progress.hidden = true;
+    addFiles(files);
+    toast(
+      folders > 0
+        ? `Carpeta${folders > 1 ? "s" : ""} anadida: ${files.length} imagen(es).`
+        : `${files.length} imagen(es) anadidas.`,
+      "info"
+    );
+  } catch (error) {
+    progress.hidden = true;
+    toast(`No se pudo leer el contenido arrastrado: ${error.message}`, "error");
+  }
+}
+
+function collectEntry(entry, files, onProgress) {
+  return new Promise((resolve) => {
+    if (entry.isFile) {
+      entry.file((file) => {
+        if (looksLikeImage(file)) files.push(file);
+        onProgress(files.length);
+        resolve();
+      }, resolve);
+      return;
+    }
+
+    if (!entry.isDirectory) {
+      resolve();
+      return;
+    }
+
+    const reader = entry.createReader();
+    const readBatch = () => {
+      reader.readEntries(async (batch) => {
+        if (batch.length === 0) {
+          onProgress(files.length);
+          resolve();
+          return;
+        }
+
+        for (const child of batch) {
+          await collectEntry(child, files, onProgress);
+        }
+        readBatch();
+      }, resolve);
+    };
+
+    readBatch();
+  });
+}
+
+/* ============================== Reintentos y limpieza ============================== */
+
+function retryFailed() {
+  const failed = queue.filter((item) => item.state === "error");
+  if (failed.length === 0) {
+    toast("No hay imagenes con error.", "info");
+    return;
+  }
+
+  for (const item of failed) {
+    item.state = "pending";
+    item.error = null;
+    item.percent = 0;
+    item.phase = "";
+    item.record = null;
+  }
+
+  renderQueue();
+  toast(`Reintentando ${failed.length} imagen(es).`, "info");
+  void convertQueue();
+}
+
+function clearFinished() {
+  const removable = queue.filter((item) => ["done", "cancelled", "error"].includes(item.state));
+  if (removable.length === 0) {
+    toast("No hay imagenes terminadas.", "info");
+    return;
+  }
+
+  for (const item of removable) URL.revokeObjectURL(item.previewUrl);
+  const remaining = queue.filter((item) => !removable.includes(item));
+  queue.length = 0;
+  queue.push(...remaining);
+
+  renderQueue();
+  toast(`Se quitaron ${removable.length} imagen(es) de la cola.`, "info");
+}
+
+/* ============================== Presets ============================== */
+
+function currentPresets() {
+  const conversion = state.settings.values.conversion || {};
+  return Array.isArray(conversion.presets) ? conversion.presets : [];
+}
+
+function presetByName(name) {
+  return currentPresets().find((preset) => (preset.name || "").toLowerCase() === String(name).toLowerCase());
+}
+
+function renderPresetList(selected = null) {
+  const select = el("preset-select");
+  const previous = selected ?? select.value;
+  const presets = currentPresets();
+
+  select.innerHTML = "";
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = "(sin preset)";
+  select.appendChild(empty);
+
+  presets.forEach((preset) => {
+    const option = document.createElement("option");
+    option.value = preset.name;
+    const parts = [preset.format || "webp", preset.quality ? `q${preset.quality}` : null];
+    option.textContent = `${preset.name} (${parts.filter(Boolean).join(" ")})`;
+    select.appendChild(option);
+  });
+
+  select.value = presets.some((preset) => preset.name === previous) ? previous : "";
+  onPresetSelected();
+}
+
+function onPresetSelected() {
+  const name = el("preset-select").value;
+  el("preset-delete").disabled = !name;
+  const preset = name ? presetByName(name) : null;
+  el("preset-status").textContent = preset ? describePreset(preset) : "";
+}
+
+function describePreset(preset) {
+  const parts = [];
+  if (preset.engine) parts.push(`motor=${preset.engine}`);
+  if (preset.format) parts.push(`formato=${preset.format}`);
+  if (preset.quality) parts.push(`calidad=${preset.quality}`);
+  if (preset.maxWidth) parts.push(`ancho=${preset.maxWidth}`);
+  if (preset.maxHeight) parts.push(`alto=${preset.maxHeight}`);
+  if (preset.collection) parts.push(`coleccion=${preset.collection}`);
+  if (preset.removeMetadata === false) parts.push("conservar metadatos");
+  return parts.join(", ");
+}
+
+function applyPresetToOptions(preset) {
+  pinOptions();
+  if (preset.engine) el("engine").value = preset.engine;
+  if (preset.format) {
+    el("format").value = preset.format;
+    el("format").dispatchEvent(new Event("change"));
+  }
+  if (preset.quality) {
+    el("quality").value = String(preset.quality);
+    el("quality").dispatchEvent(new Event("input"));
+  }
+  if (preset.maxWidth) el("max-width").value = String(preset.maxWidth);
+  if (preset.maxHeight) el("max-height").value = String(preset.maxHeight);
+  if (preset.collection !== undefined) el("collection").value = preset.collection || "";
+  if (preset.removeMetadata !== undefined && preset.removeMetadata !== null) {
+    el("remove-metadata").checked = Boolean(preset.removeMetadata);
+  }
+}
+
+function applyPresetToAll() {
+  const name = el("preset-select").value;
+  const preset = name ? presetByName(name) : null;
+  if (!preset) {
+    toast("Selecciona un preset primero.", "warn");
+    return;
+  }
+
+  applyPresetToOptions(preset);
+  const pending = queue.filter(editableState);
+  pending.forEach((item) => {
+    item.overrides = presetToOverrides(preset);
+  });
+
+  renderQueue();
+  toast(`Preset "${name}" aplicado a ${pending.length} imagen(es).`, "info");
+}
+
+function applyPresetToSelected() {
+  const name = el("preset-select").value;
+  const preset = name ? presetByName(name) : null;
+  if (!preset) {
+    toast("Selecciona un preset primero.", "warn");
+    return;
+  }
+
+  const selected = queue.filter((item) => item.selected && editableState(item));
+  if (selected.length === 0) {
+    toast("Marca al menos una imagen pendiente.", "warn");
+    return;
+  }
+
+  selected.forEach((item) => {
+    item.overrides = presetToOverrides(preset);
+  });
+
+  renderQueue();
+  toast(`Preset "${name}" aplicado a ${selected.length} imagen(es).`, "info");
+}
+
+function presetToOverrides(preset) {
+  return {
+    engine: preset.engine ?? undefined,
+    format: preset.format ?? undefined,
+    quality: preset.quality ?? undefined,
+    maxWidth: preset.maxWidth ?? undefined,
+    maxHeight: preset.maxHeight ?? undefined,
+    collection: preset.collection ?? undefined
+  };
+}
+
+function readOptionsAsPreset(name) {
+  return {
+    name,
+    engine: el("engine").value,
+    format: el("format").value,
+    quality: Number(el("quality").value) || 80,
+    maxWidth: el("max-width").value ? Number(el("max-width").value) : null,
+    maxHeight: el("max-height").value ? Number(el("max-height").value) : null,
+    removeMetadata: el("remove-metadata").checked,
+    collection: el("collection").value.trim() || null
+  };
+}
+
+async function persistPresets(presets, message) {
+  try {
+    await fetchJson("/api/settings/user", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversion: { presets } })
+    });
+
+    await loadServerSettingsAndRefresh();
+    renderPresetList(message ? presets[presets.length - 1]?.name : null);
+    el("preset-status").textContent = message || "";
+    toast(message || "Presets actualizados.", "info");
+  } catch (error) {
+    toast(`No se pudo guardar el preset: ${error.message}`, "error");
+  }
+}
+
+async function loadServerSettingsAndRefresh() {
+  try {
+    state.settings = await fetchJson("/api/settings/effective");
+    document.dispatchEvent(new CustomEvent("suca:settings"));
+  } catch { /* mantiene la vista actual */ }
+}
+
+async function savePresetFromOptions() {
+  const nameInput = el("preset-name");
+  let name = (nameInput.value || "").trim();
+
+  if (!name) {
+    // Primer guardado: pedimos el nombre en el propio campo.
+    nameInput.hidden = false;
+    nameInput.focus();
+    el("preset-status").textContent = "Escribe un nombre y vuelve a pulsar Guardar actual.";
+    return;
+  }
+
+  const presets = [...currentPresets()];
+  const existingIndex = presets.findIndex((preset) => (preset.name || "").toLowerCase() === name.toLowerCase());
+
+  if (existingIndex >= 0) {
+    presets[existingIndex] = readOptionsAsPreset(name);
+    await persistPresets(presets, `Preset "${name}" actualizado.`);
+  } else {
+    presets.push(readOptionsAsPreset(name));
+    await persistPresets(presets, `Preset "${name}" guardado.`);
+  }
+
+  nameInput.hidden = true;
+  nameInput.value = "";
+}
+
+async function deletePreset() {
+  const name = el("preset-select").value;
+  const preset = name ? presetByName(name) : null;
+  if (!preset) return;
+
+  if (!window.confirm(`Borrar el preset "${name}"?`)) return;
+
+  const presets = currentPresets().filter((item) => (item.name || "").toLowerCase() !== name.toLowerCase());
+  await persistPresets(presets, `Preset "${name}" borrado.`);
 }

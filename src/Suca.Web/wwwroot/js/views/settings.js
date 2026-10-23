@@ -1,4 +1,4 @@
-import { state, el, toast } from "../main.js";
+import { state, el, toast, escapeHtml } from "../main.js";
 
 let initialized = false;
 const dirtyPaths = new Set();
@@ -19,7 +19,45 @@ export function initSettingsView() {
   el("reset-user-settings").addEventListener("click", () => void resetSettings("user"));
   el("reset-system-settings").addEventListener("click", () => void resetSettings("system"));
 
-  document.addEventListener("suca:settings", fillForm);
+  document.addEventListener("suca:settings", () => {
+    fillForm();
+    renderPresets();
+  });
+}
+
+/* Listado informative de los presets guardados (la edicion vive en Compresor). */
+function renderPresets() {
+  const container = el("presets-readonly");
+  if (!container) return;
+
+  const presets = Array.isArray(state.settings.values.conversion?.presets)
+    ? state.settings.values.conversion.presets
+    : [];
+
+  container.innerHTML = "";
+
+  if (presets.length === 0) {
+    container.innerHTML = '<div class="empty-state">Sin presets. Crea uno en la pantalla Compresor.</div>';
+    return;
+  }
+
+  presets.forEach((preset) => {
+    const parts = [
+      preset.format ? `formato=${preset.format}` : null,
+      preset.quality ? `calidad=${preset.quality}` : null,
+      preset.maxWidth ? `ancho=${preset.maxWidth}` : null,
+      preset.maxHeight ? `alto=${preset.maxHeight}` : null,
+      preset.collection ? `coleccion=${preset.collection}` : null,
+      preset.removeMetadata === false ? "conserva metadatos" : null
+    ].filter(Boolean);
+
+    const row = document.createElement("div");
+    row.className = "preset-row-readonly";
+    row.innerHTML = `
+      <span class="chip" data-kind="accent">${escapeHtml(preset.name)}</span>
+      <span class="muted-note">${escapeHtml(parts.join(", ") || "sin valores definidos")}</span>`;
+    container.appendChild(row);
+  });
 }
 
 async function refreshFromServer() {

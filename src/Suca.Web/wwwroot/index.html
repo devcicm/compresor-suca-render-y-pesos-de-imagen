@@ -24,6 +24,22 @@
       <h2>Opciones
         <span class="tip-dot" data-tip-title="Opciones de conversion" data-tip="Se aplican a todos los archivos de la cola. Los valores iniciales provienen de tus ajustes (scope usuario o sistema)." tabindex="0" role="note">?</span>
       </h2>
+      <div class="preset-row">
+        <label class="field field-inline">
+          <span class="field-label">Preset
+            <span class="tip-dot" data-tip-title="Presets" data-tip="Un preset guarda motor, formato, calidad, dimensiones y coleccion. Aplicar un preset a la cola lo usa en todos los pendientes; a las marcadas solo en esas. Se guardan en tus ajustes." tabindex="0" role="note">?</span>
+          </span>
+          <select id="preset-select">
+            <option value="">(sin preset)</option>
+          </select>
+        </label>
+        <button id="preset-apply" type="button" class="btn">Aplicar</button>
+        <button id="preset-apply-selected" type="button" class="btn">Aplicar a marcadas</button>
+        <button id="preset-save" type="button" class="btn">Guardar actual</button>
+        <button id="preset-delete" type="button" class="btn btn-danger" disabled>Borrar</button>
+        <input id="preset-name" type="text" placeholder="nombre del preset" maxlength="40" hidden>
+        <span id="preset-status" class="muted-note" role="status"></span>
+      </div>
       <div class="grid-options">
         <label class="field">
           <span class="field-label">Motor
@@ -81,12 +97,13 @@
       </div>
     </div>
 
-    <div class="card dropzone" id="dropzone" role="button" tabindex="0" aria-label="Arrastre imagenes aqui o haga clic para seleccionar">
+    <div class="card dropzone" id="dropzone" role="button" tabindex="0" aria-label="Arrastre imagenes o carpetas aqui, o haga clic para seleccionar">
       <input id="file-input" type="file" accept="image/*" multiple hidden>
-      <p class="dropzone-title">Arrastre imagenes aqui</p>
+      <p class="dropzone-title">Arrastre imagenes o carpetas aqui</p>
       <p class="dropzone-sub">o</p>
       <button id="browse-button" type="button" class="btn">Seleccionar archivos</button>
-      <p class="dropzone-hint">Multiples archivos, en paralelo (<span id="parallel-info">3</span> a la vez). WebP preseleccionado.</p>
+      <p class="dropzone-hint">Multiples archivos, en paralelo (<span id="parallel-info">3</span> a la vez). WebP preseleccionado. Tambien puedes pegar con Ctrl+V.</p>
+      <p id="dropzone-progress" class="muted-note" hidden></p>
     </div>
 
     <div class="card">
@@ -102,6 +119,13 @@
             <span class="tip-dot" data-tip-title="Aplicar en lote" data-tip="Copia el motor, formato, calidad y coleccion de las Opciones a todas las imagenes marcadas." data-tip-pos="top" tabindex="0" role="note">?</span>
           </button>
           <button id="remove-selected-button" type="button" class="btn btn-danger" hidden>Quitar seleccionadas</button>
+          <button id="retry-failed-button" type="button" class="btn" hidden>Reintentar fallidas
+            <span class="tip-dot" data-tip-title="Reintentar" data-tip="Vuelve a poner en lista las imagenes con error y arranca la conversion de nuevo." data-tip-pos="top" tabindex="0" role="note">?</span>
+          </button>
+          <button id="clear-finished-button" type="button" class="btn" hidden>Limpiar terminadas
+            <span class="tip-dot" data-tip-title="Limpiar terminadas" data-tip="Quita de la cola las imagenes ya convertidas, canceladas o con error. No borra los resultados de la galeria." data-tip-pos="top" tabindex="0" role="note">?</span>
+          </button>
+          <button id="cancel-all-button" type="button" class="btn btn-danger" hidden>Cancelar todo</button>
           <button id="clear-button" type="button">Limpiar</button>
         </div>
       </div>

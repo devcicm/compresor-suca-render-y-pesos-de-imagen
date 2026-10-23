@@ -77,6 +77,28 @@ js/main.js       Estado global, ajustes, toasts, sondeo de /health y utilidades
   navegables usan `data-nav-item` y flechas; el progreso se anuncia con una region viva
   (`.visually-hidden`, `role="status"`).
 
+## Compresor: presets, carpetas y gestion de la cola
+
+- **Presets** (`conversion.presets` en los ajustes): perfil con motor, formato, calidad,
+  ancho/alto, metadatos y coleccion. En la pantalla Compresor hay selector con **Aplicar**
+  (a toda la cola) y **Aplicar a marcadas** (solo las seleccionadas), **Guardar actual**
+  (pide nombre la primera vez, actualiza si ya existe) y **Borrar**. Al aplicar un preset a
+  toda la cola los pendientes reciben un `override` con esos valores. La validacion del
+  servidor limita a 24 presets, nombre de 1-40 caracteres, calidad 1-100, formato soportado,
+  dimensiones 1-20000 y nombres unicos (sin distinguir mayusculas).
+  Ajustes muestra el listado informativo de los presets guardados.
+- **Arrastrar carpetas**: el dropzone acepta carpetas completas mediante
+  `webkitGetAsEntry()` con recorrido recursivo, filtra solo imagenes y muestra el avance de
+  lectura. Si no hay imagenes avisa en lugar de fallar en silencio.
+- **Pegar desde el portapapeles**: evento `paste` con imagenes (`Ctrl+V`), sin afectar a
+  los campos de texto.
+- **Gestion de la cola**: `Reintentar fallidas` vuelve a poner en lista los errores y
+  arranca la conversion, `Limpiar terminadas` retira convertidas/canceladas/con error (no
+  borra resultados de la galeria) y `Cancelar todo` detiene lo que este en curso (atajo
+  `Ctrl+Shift+C`). Los botones aparecen solo cuando tienen sentido.
+- Las opciones visibles quedan **fijadas** (`optionsPinned`) cuando el usuario las edita o
+  aplica un preset, para que una recarga de ajustes no las pise.
+
 ## Componentes interactivos del Compresor (extras)
 
 - **Explorador de carpetas** (`#folder-overlay`): dialogo modal que consume `GET /api/web/folders`; lista unidades y subcarpetas con conteo de imagenes, sube con "Arriba" y devuelve la ruta seleccionada al campo `Carpeta del servidor`
