@@ -9,16 +9,6 @@ Todavia no hay release publicada: este es el estado actual del codigo de `main`.
 
 ### Anadido
 
-**Selector de archivos: fin de las roturas tras editar**
-- El host sirve `/studio` con `Cache-Control: no-cache, no-store, must-revalidate`. La
-  causa de que el selector dejara de abrir era un `index.html` cacheado (dropzone como
-  `<div>` con `#browse-button`) conviviendo con el `compress.js` nuevo.
-- El dropzone sigue siendo `<label for="file-input">` (apertura nativa) y `compress.js`
-  mantiene un respaldo por clic si el HTML es anterior al label.
-- Los controles opcionales del Compresor se enlazan con `bind()`: un HTML incompleto ya no
-  aborta la inicializacion de la vista.
-- CI comprueba el contrato del selector (label + input sin `hidden`).
-
 **Optimizador bajo techo: rapido y sin aparentes bloqueos**
 - La escalera de candidatos es **adaptativa**: arranca en `sqrt(techo/original)` y nunca
   supera el tamaño que fija el perfil. Antes, con 80 KB sobre una foto de 71 MP, probaba
@@ -63,9 +53,9 @@ Todavia no hay release publicada: este es el estado actual del codigo de `main`.
 - **Legibilidad verificada** (`legibilityAcceptable`): SSIM >= 0.90 y, en contenido
   textual, bordes >= 0.70. Si el techo se cumple pero la legibilidad no, la UI lo marca en
   rojo.
-- Medicion: con el mismo techo de 80 KB, la foto de prueba pasa de 1016x1524 (simple) a
-  **1440x2160** (optimizada): +41% de pixeles a igual peso. En un documento de 60 KB pasa de
-  1152x1584 a **1360x1870 con q92**.
+- Medicion historica de la primera version: con 80 KB, una foto sintetica pasaba de
+  1016x1524 (simple) a 1440x2160 (optimizada). Las mediciones vigentes del optimizador
+  adaptativo estan en [docs/math/suca-formulas.md](docs/math/suca-formulas.md).
 
 **Motor SUCA documentado y configurable**
 - Nuevo `docs/math/suca-formulas.md`: las formulas completas del kernel (senales visuales,
@@ -118,6 +108,12 @@ Todavia no hay release publicada: este es el estado actual del codigo de `main`.
   `div` que llamaba `input.click()` sobre un input `hidden`. La activacion ahora es nativa
   del navegador, sin depender de JavaScript (que algunas extensiones o navegadores
   embebidos bloquean). Teclado y `Ctrl+O` mantienen su respaldo.
+- **El selector volvia a romperse tras cada edicion**: un `index.html` cacheado (dropzone
+  `div` + `#browse-button`) convivia con el `compress.js` nuevo y el clic no hacia nada.
+  `/studio` se sirve con `Cache-Control: no-cache, no-store, must-revalidate`, el JS
+  mantiene un respaldo por clic para HTML anterior al label, los controles opcionales se
+  enlazan con `bind()` para que un HTML incompleto no aborte la vista, y CI valida el
+  contrato (label + input sin `hidden`).
 - **"Abrir carpeta" podia no mostrar ventana**: la apertura pasa a usar la API nativa
   `SHOpenFolderAndSelectItems` (la de "Mostrar en carpeta"), que devuelve un HRESULT real y
   no depende de la linea de comandos de `explorer.exe`; se mantiene la cascada a
@@ -175,10 +171,9 @@ Todavia no hay release publicada: este es el estado actual del codigo de `main`.
 
 ### Seguridad y privacidad
 
-- **Apertura del Explorador corregida**: `explorer.exe` se lanza con ruta absoluta y
-  `UseShellExecute = true`; sin esa opcion el proceso se creaba fuera de la sesion del shell
-  y no aparecia ninguna ventana. Ahora hay cascada (seleccionar archivo, luego carpeta) y,
-  si no hay escritorio interactivo, se informa y se devuelve la ruta para copiarla.
+- **Apertura del Explorador**: `SHOpenFolderAndSelectItems` (API nativa) con cascada a
+  `explorer.exe /select` y a abrir la carpeta; si no hay escritorio interactivo se informa y
+  se devuelve la ruta para copiarla. Diagnostico en `GET /api/web/diagnostics/reveal`.
 - Eliminacion de datos de usuario de `runtime/` y reglas para que nunca se versionen.
 - Rutas personales anonimizadas en los comentarios de `legacy/`.
 - Escaneo de secretos e integracion continua (build en Windows) en GitHub Actions.
@@ -190,5 +185,9 @@ Todavia no hay release publicada: este es el estado actual del codigo de `main`.
 - Documentacion de operacion con el contrato de ordenes, colecciones, rutas, metricas y
   variables de arranque.
 - Documentacion de arquitectura, del shell web, del chat y estrategia de pruebas.
+- `src/Suca.Web/README.md` fija el contrato del selector de archivos (label nativo,
+  `no-store`, `bind()`) y las convenciones CSS sin antipatrones.
+- `docs/operations/README.md` documenta el progreso con heartbeat, los limites de subida y
+  pixeles, y el diagnostico `SUCA_OPT_DEBUG=1` del optimizador.
 - `README.md`, `CONTRIBUTING.md` y seccion de datos y privacidad.
 - **Licencia MIT** (`LICENSE`) y avisos de terceros (`THIRD-PARTY-NOTICES.md`).

@@ -21,6 +21,10 @@ dotnet build "ConsoleApp suca compress.csproj"
 La primera ejecucion crea `runtime/` (galeria, ordenes, ajustes, chat e indices). Esa
 carpeta es **local y esta ignorada por Git**: no la suba nunca.
 
+No versione imagenes de prueba: la raiz ignora `*.jpg`, `*.png`, `*.webp`, `*.bmp` y
+similares (los activos del shell viven en `src/Suca.Web/wwwroot`). `runtime/` tambien esta
+ignorado: ahi quedan galeria, ordenes, ajustes e indices locales.
+
 Windows bloquea el `.exe` mientras la app corre. El target `StopRunningSuca` del
 `.csproj` cierra la instancia antes de compilar, asi que `dotnet build` y `F5` funcionan
 aunque el servicio siga abierto. Para desactivarlo: `dotnet build -p:StopRunningApp=false`

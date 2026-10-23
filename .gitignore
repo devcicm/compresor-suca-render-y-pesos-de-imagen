@@ -45,6 +45,17 @@ coverage/
 .playwright-mcp/
 .mcp/
 
+# Imagenes de prueba sueltas en la raiz (no son activos del proyecto:
+# los activos web viven en src/Suca.Web/wwwroot).
+/*.jpg
+/*.jpeg
+/*.png
+/*.webp
+/*.bmp
+/*.gif
+/*.tif
+/*.tiff
+
 # OS noise
 .DS_Store
 Thumbs.db

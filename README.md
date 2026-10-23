@@ -13,7 +13,7 @@ La estructura ya expresa los limites de los contextos, pero el codigo aun se com
 
 `legacy/` contiene la version base historica del compresor (la idea original del proyecto); el `.csproj` la excluye de la compilacion y no debe modificarse. `runtime/` contiene galeria de conversiones, ordenes, ajustes, indices, conversaciones y resultados locales; esta ignorado por Git para no versionar datos generados ni contenido de usuarios.
 
-**Pruebas**: todavia no hay suites automatizadas; la verificacion actual es manual y guida por navegador (ver [Estrategia de pruebas](tests/README.md), donde estan las 9 unidades priorizadas para las futuras suites). La integracion continua valida compilacion e higiene del repositorio en cada `push`.
+**Pruebas**: todavia no hay suites automatizadas; la verificacion actual es manual y guida por navegador (ver [Estrategia de pruebas](tests/README.md), donde estan las 10 unidades priorizadas para las futuras suites). La integracion continua valida compilacion e higiene del repositorio en cada `push`.
 
 ## Datos y privacidad
 
@@ -100,9 +100,9 @@ Para las funciones LLM, LM Studio debe publicar una API local compatible con Ope
 
 ### Servicio de conversion de imagenes
 
-SUCA Studio permite subir imagenes (ventana de seleccion o arrastrar y soltar, una o muchas en paralelo) y convertirlas entre `webp` (formato por defecto), `jpeg` y `png`. El motor por defecto es el **pipeline SUCA** (configurable a re-encodado `directo`), con barras de progreso por archivo, pausa/cancelacion/reanudacion y metricas de entrada y salida (formato, dimensiones, EXIF, bpp, ratio, ahorro, duracion). Los resultados quedan en una galeria con **colecciones** y se recuperan como archivo o base64:
+SUCA Studio permite subir imagenes (ventana de seleccion o arrastrar y soltar, una o muchas en paralelo) y convertirlas entre `webp` (formato por defecto), `jpeg` y `png`. El motor por defecto es el **pipeline SUCA** (configurable a re-encodado `directo`), con **progreso real por archivo** (porcentaje, etapa y heartbeat), pausa/cancelacion/reanudacion y metricas de entrada y salida (formato, dimensiones, EXIF, bpp, ratio, ahorro, duracion). Los resultados quedan en una galeria con **colecciones** y se recuperan como archivo o base64:
 
-- `POST /api/web/convert` (multipart con `engine`, `format`, `quality`, `maxWidth`, `maxHeight`, `removeMetadata`, `collection`, `correlationId`, y el **perfil SUCA** `profileA|profileB|profileC|profileD` de 0 a 9 — los cuatro juntos, si no se usa el perfil por defecto 0-1-1-3) y `POST /api/web/convert/cancel` (`{"correlationId":"..."}`) para cancelar de verdad una conversion en vuelo: el trabajo se interrumpe y no se registra en la galeria.
+- `POST /api/web/convert` (multipart con `engine`, `format`, `quality`, `maxWidth`, `maxHeight`, `removeMetadata`, `collection`, `correlationId`, el **perfil SUCA** `profileA|profileB|profileC|profileD` de 0 a 9 — los cuatro juntos, si no se usa el perfil por defecto 0-1-1-3 —, `pesoMoscaKbTarget` como techo de peso y `optimize=true` para buscar la mejor escala x calidad que quepa) y `GET /api/web/convert/progress?correlationId=...` para porcentaje, etapa y heartbeat. `POST /api/web/convert/cancel` (`{"correlationId":"..."}`) cancela de verdad una conversion en vuelo: el trabajo se interrumpe y no se registra en la galeria.
 - `GET /api/web/images[?collection=nombre]`, `GET /api/web/images/{id}`.
 - `GET /api/web/images/{id}/file?variant=converted|original` devuelve los bytes.
 - `GET /api/web/images/{id}/base64?variant=converted|original` devuelve `base64` y `dataUrl`.
