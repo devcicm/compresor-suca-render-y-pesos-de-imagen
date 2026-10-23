@@ -474,6 +474,7 @@ function renderQueue() {
           <span class="chip">${r.outputCompressionRatio}:1</span>
           <span class="chip">${r.durationMs} ms</span>
           <span class="chip">${escapeHtml(r.collection)}</span>
+          ${persoObjetivoChip(r)}
           ${integrityChips(r)}
         </div>
         <div class="q-meta q-links">
@@ -959,6 +960,16 @@ async function validateOrder() {
     statusEl.textContent = "";
     toast(`Carpeta invalida: ${error.message}`, "error");
   }
+}
+
+/* Chip del techo de peso: verde si se cumplio, rojo si el kernel no pudo alcanzarlo. */
+function persoObjetivoChip(record) {
+  if (!record || record.pesoObjetivoKb === null || record.pesoObjetivoKb === undefined) return "";
+
+  const target = Number(record.pesoObjetivoKb).toFixed(0);
+  const ok = record.pesoObjetivoCumplido === true;
+
+  return `<span class="chip" data-kind="${ok ? "ok" : "bad"}" title="${ok ? "Peso dentro del techo pedido" : "No se pudo alcanzar el techo con los ajustes disponibles"} (${record.pesoIteraciones ?? 0} iteraciones)">objetivo ${target} KB ${ok ? "cumplido" : "no cumplido"}</span>`;
 }
 
 /* Chips del reporte de integridad perceptual (solo motor SUCA). */

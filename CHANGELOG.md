@@ -55,6 +55,12 @@ Todavia no hay release publicada: este es el estado actual del codigo de `main`.
 
 ### Corregido
 
+- **El techo de peso no se cumplia**: con objetivo 80 KB un archivo de 3.29 MB salia en
+  495 KB. El bucle hacia 8 pasos fijos de `x0.94` (maximo 0.61 de reduccion) y se rendia en
+  silencio. Ahora baja calidad y reduce escala con paso geometrico `sqrt(objetivo/peso)`
+  (1-3 iteraciones), sube calidad si sobra margen y publica `pesoObjetivoCumplido` para que
+  la UI marque el incumplimiento. El techo es **opt-in**: sin `pesoMoscaKbTarget` manda el
+  perfil A-D.
 - **Fuga de informacion en errores 500**: el manejador global devolvia `detail` con el stack
   trace completo. Ahora el stack va al log del servidor y la respuesta es un mensaje limpio.
 - **Cuerpo demasiado grande devolvia 500**: `BadHttpRequestException` del limite de subida

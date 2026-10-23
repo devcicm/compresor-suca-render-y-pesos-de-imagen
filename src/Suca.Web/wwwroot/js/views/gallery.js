@@ -638,13 +638,18 @@ async function openDetail(id) {
   // Integridad perceptual: la prueba medible de "cuanta calidad se conservo".
   const integrity = el("detail-integrity-chips");
   if (integrity) {
+    const peso = record.pesoObjetivoKb !== null && record.pesoObjetivoKb !== undefined
+      ? `<span class="chip" data-kind="${record.pesoObjetivoCumplido ? "ok" : "bad"}">objetivo ${Number(record.pesoObjetivoKb).toFixed(0)} KB ${record.pesoObjetivoCumplido ? "cumplido" : "no cumplido"} (${record.pesoIteraciones ?? 0} iter.)</span>`
+      : "";
+
     if (record.integritySsim === null || record.integritySsim === undefined) {
-      integrity.innerHTML = '<span class="chip">sin reporte (motor directo)</span>';
+      integrity.innerHTML = `${peso}<span class="chip">sin reporte (motor directo)</span>`;
     } else if (record.integrityBitwiseEqual) {
-      integrity.innerHTML = '<span class="chip" data-kind="ok">sin perdida: SHA-256 identico</span>';
+      integrity.innerHTML = `${peso}<span class="chip" data-kind="ok">sin perdida: SHA-256 identico</span>`;
     } else {
       const ok = record.integrityVerdict === "ACEPTABLE ESTRUCTURALMENTE";
       integrity.innerHTML = `
+        ${peso}
         <span class="chip" data-kind="${ok ? "ok" : "warn"}">${escapeHtml(record.integrityVerdict ?? "")}</span>
         <span class="chip">SSIM ${Number(record.integritySsim).toFixed(3)}</span>
         <span class="chip">PSNR ${Number(record.integrityPsnr ?? 0).toFixed(1)} dB</span>

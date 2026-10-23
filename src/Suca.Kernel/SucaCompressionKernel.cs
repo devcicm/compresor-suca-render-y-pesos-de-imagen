@@ -267,6 +267,11 @@ namespace SUCA_Compressor
         public long TotalMs { get; set; }
 
         public IntegrityReport? Integrity { get; set; }
+
+        // Peso mosca: objetivo, resultado real y si se cumplio. Null = no aplicado.
+        public double? PesoObjetivoKb { get; set; }
+        public bool? PesoObjetivoCumplido { get; set; }
+        public int PesoIteraciones { get; set; }
     }
 
     public sealed class IntegrityReport
@@ -1570,7 +1575,7 @@ namespace SUCA_Compressor
 
             // Guardado inicial + refinamiento peso mosca
             var swSave = Stopwatch.StartNew();
-            SaveWithOptionalPesoMosca(image, outputPath, decision, options, cancellationToken);
+            (bool pesoCumplido, int pesoIteraciones) = SaveWithOptionalPesoMosca(image, outputPath, decision, options, cancellationToken);
             swSave.Stop();
 
             var finfo = new FileInfo(outputPath);
@@ -1585,6 +1590,13 @@ namespace SUCA_Compressor
             result.ResizeMs = swResize.ElapsedMilliseconds;
             result.SaveMs = swSave.ElapsedMilliseconds;
 
+            if (options.EnablePesoMosca && options.PesoMoscaKbTarget > 0)
+            {
+                result.PesoObjetivoKb = options.PesoMoscaKbTarget;
+                result.PesoObjetivoCumplido = pesoCumplido;
+                result.PesoIteraciones = pesoIteraciones;
+            }
+
             if (options.GenerateIntegrityReport)
                 result.Integrity = IntegrityValidator.Compare(inputPath, outputPath, cancellationToken);
 
@@ -1593,77 +1605,153 @@ namespace SUCA_Compressor
             return result;
         }
 
-        private static void SaveWithOptionalPesoMosca(Image<Rgba32> image, string outputPath, SucaDecision decision, SucaOptions options, CancellationToken cancellationToken)
+        /// <summary>
+        /// Guarda respetando el techo de peso (peso mosca). Estrategia:
+        /// 1) si la salida ya cabe y el formato admite calidad, SUBE calidad de 5 en 5
+        ///    mientras siga cabiendo (mejor calidad posible dentro del techo);
+        /// 2) si no cabe, baja calidad hasta el piso y despues reduce escala de forma
+        ///    GEOMETRICA (sqrt(objetivo/actual)), que converge en 1-3 pasos en vez de
+        ///    rendirse tras N pasos fijos de 0.94.
+        /// Devuelve si el objetivo se cumplio y cuantas iteraciones se usaron.
+        /// </summary>
+        private static (bool cumplido, int iteraciones) SaveWithOptionalPesoMosca(
+            Image<Rgba32> image,
+            string outputPath,
+            SucaDecision decision,
+            SucaOptions options,
+            CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             SaveByDecision(image, outputPath, decision, cancellationToken);
 
-            if (!options.EnablePesoMosca) return;
+            if (!options.EnablePesoMosca || options.PesoMoscaKbTarget <= 0)
+                return (true, 0);
 
-            double kb = new FileInfo(outputPath).Length / 1024.0;
-            if (kb <= options.PesoMoscaKbTarget) return;
-
-            // Refinamiento: sólo calidad y, si no basta, escala incremental.
-            int q = decision.Quality;
-            int nlq = decision.NearLosslessQuality;
-            int iterations = options.MaxRefineIterations;
             double target = options.PesoMoscaKbTarget;
+            double kb = FileSizeKb(outputPath);
+            int iterations = 1;
+
+            bool lossy = decision.OutputFormat is SucaOutputFormat.Jpeg or SucaOutputFormat.Webp;
+
+            SucaDecision Variant(int quality, int nearLosslessQuality, Image<Rgba32> source) => new()
+            {
+                Hash = decision.Hash,
+                ExtendedHash = decision.ExtendedHash,
+                Scale = decision.Scale,
+                Quality = quality,
+                OutputFormat = decision.OutputFormat,
+                UseNearLosslessWebp = decision.UseNearLosslessWebp,
+                NearLosslessQuality = nearLosslessQuality,
+                RemoveMetadata = decision.RemoveMetadata,
+                ContentKind = decision.ContentKind,
+                NewWidth = source.Width,
+                NewHeight = source.Height
+            };
+
+            // 1) Hay margen: subir calidad mientras quepa (90% del techo, para no rozarlo).
+            if (kb <= target * 0.9 && lossy)
+            {
+                int q = decision.Quality;
+                int nlq = decision.NearLosslessQuality;
+                double budget = target * 0.95;
+                string probePath = outputPath + ".probe";
+
+                while (q < 95)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    int nextQ = Math.Min(95, q + 5);
+                    int nextNlq = decision.UseNearLosslessWebp ? Math.Min(100, nlq + 5) : nlq;
+
+                    SaveByDecision(image, probePath, Variant(nextQ, nextNlq, image), cancellationToken);
+                    iterations++;
+
+                    double probeKb = FileSizeKb(probePath);
+                    if (probeKb > budget)
+                    {
+                        // Esta calidad ya no cabe: nos quedamos con la anterior.
+                        break;
+                    }
+
+                    q = nextQ;
+                    nlq = nextNlq;
+                    kb = probeKb;
+                    File.Copy(probePath, outputPath, overwrite: true);
+                }
+
+                TryDeleteFile(probePath);
+                return (true, iterations);
+            }
+
+            // 2) No cabe: bajar calidad al piso y despues reducir escala geometricamente.
+            int currentQ = decision.Quality;
+            int currentNlq = decision.NearLosslessQuality;
 
             using var work = image.Clone();
 
-            for (int i = 0; i < iterations; i++)
+            for (int i = 0; i < options.MaxRefineIterations && kb > target; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                bool changed = false;
+                bool loweredQuality = false;
 
-                if (decision.OutputFormat == SucaOutputFormat.Jpeg || decision.OutputFormat == SucaOutputFormat.Webp)
+                if (lossy && currentQ > 35)
                 {
-                    if (q > 38)
-                    {
-                        q = Math.Max(35, q - 5);
-                        changed = true;
-                    }
-                    if (decision.UseNearLosslessWebp && nlq > 50)
-                    {
-                        nlq = Math.Max(45, nlq - 5);
-                        changed = true;
-                    }
+                    currentQ = Math.Max(35, currentQ - 10);
+                    loweredQuality = true;
                 }
 
-                SaveByDecision(work, outputPath, new SucaDecision
+                if (decision.UseNearLosslessWebp && currentNlq > 45)
                 {
-                    Hash = decision.Hash,
-                    ExtendedHash = decision.ExtendedHash,
-                    Scale = decision.Scale,
-                    Quality = q,
-                    OutputFormat = decision.OutputFormat,
-                    UseNearLosslessWebp = decision.UseNearLosslessWebp,
-                    NearLosslessQuality = nlq,
-                    RemoveMetadata = decision.RemoveMetadata,
-                    ContentKind = decision.ContentKind,
-                    NewWidth = work.Width,
-                    NewHeight = work.Height
-                }, cancellationToken);
-
-                kb = new FileInfo(outputPath).Length / 1024.0;
-                if (kb <= target) break;
-
-                if (!changed)
-                {
-                    // Si la calidad ya no puede bajar, aplicamos mini-resize.
-                    int nw = Math.Max(128, (int)Math.Round(work.Width * 0.94));
-                    int nh = Math.Max(128, (int)Math.Round(work.Height * 0.94));
-                    if (nw == work.Width || nh == work.Height) break;
-
-                    work.Mutate(x => x.Resize(new ResizeOptions
-                    {
-                        Mode = ResizeMode.Max,
-                        Sampler = KnownResamplers.MitchellNetravali,
-                        Size = new Size(nw, nh)
-                    }));
+                    currentNlq = Math.Max(45, currentNlq - 10);
+                    loweredQuality = true;
                 }
+
+                if (loweredQuality)
+                {
+                    SaveByDecision(work, outputPath, Variant(currentQ, currentNlq, work), cancellationToken);
+                    iterations++;
+                    kb = FileSizeKb(outputPath);
+                    if (kb <= target) break;
+                }
+
+                // Escala geometrica: cuanta area hace falta para llegar al objetivo.
+                // El peso crece ~ con los pixeles, de ahi la raiz cuadrada.
+                double ratio = Math.Sqrt(target / Math.Max(1.0, kb)) * 0.96;
+                ratio = Math.Clamp(ratio, 0.45, 0.97);
+
+                int nw = Math.Max(64, (int)Math.Round(work.Width * ratio));
+                int nh = Math.Max(64, (int)Math.Round(work.Height * ratio));
+                if (nw >= work.Width && nh >= work.Height) break;
+
+                work.Mutate(x => x.Resize(new ResizeOptions
+                {
+                    Mode = ResizeMode.Max,
+                    Sampler = KnownResamplers.MitchellNetravali,
+                    Size = new Size(nw, nh)
+                }));
+
+                SaveByDecision(work, outputPath, Variant(currentQ, currentNlq, work), cancellationToken);
+                iterations++;
+                kb = FileSizeKb(outputPath);
+            }
+
+            // Tolerancia del 2% por redondeos de encoder; si no, se informa sin mentir.
+            return (kb <= target * 1.02, iterations);
+        }
+
+        private static double FileSizeKb(string path) => new FileInfo(path).Length / 1024.0;
+
+        private static void TryDeleteFile(string path)
+        {
+            try
+            {
+                if (File.Exists(path)) File.Delete(path);
+            }
+            catch
+            {
+                // un temporal sin borrar no debe tumbar la conversion
             }
         }
 

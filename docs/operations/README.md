@@ -119,6 +119,8 @@ Cada conversion registra y expone: formato y dimensiones de entrada y salida, by
 
 **Integridad perceptual (motor SUCA)**: el kernel genera un reporte que ahora viaja con el registro y se muestra en la UI: `integritySsim`, `integrityPsnr` (dB), `integrityEdgeRetention`, `integrityHistogram`, `integrityMode` (`perceptual` o `lossless-strong`), `integrityVerdict` y `integrityBitwiseEqual`. Criterio de aceptacion: `SSIM >= 0.88`, bordes `>= 0.80` y histograma `>= 0.84`. `integrityBitwiseEqual = true` solo cuando los SHA-256 coinciden (sin perdida real). El motor directo no emite reporte. Detalle matematico en [docs/math/suca-formulas.md](../math/suca-formulas.md).
 
+**Techo de peso (peso mosca)**: `pesoMoscaKbTarget` es **opt-in**; sin el, la escala la decide el perfil A-D. Cuando se pide, el kernel lo hace cumplir (baja calidad y reduce escala con paso geometrico; si sobra margen, sube calidad) y el registro informa `pesoObjetivoKb`, `pesoObjetivoCumplido` y `pesoIteraciones`. La UI muestra un chip verde "objetivo N KB cumplido" o rojo "no cumplido".
+
 ## Ajustes de sistema y usuario
 
 Precedencia: CLI > usuario > sistema > valores por defecto. Los archivos viven en `runtime/settings/` (`system.json` y `users/<usuario>.json`); Git los ignora. Los valores que requieren reinicio se marcan en la respuesta con `requiresRestart`. Grupos: `conversion` (motor `suca|directo`, formato, calidad, carpeta de salida), `web` (subida maxima, pagina de galeria, timeout, paralelismo de conversion), `console` (timeout, paralelismo de lote, carpeta SUCA_OUT), `lmstudio` y `rag`.

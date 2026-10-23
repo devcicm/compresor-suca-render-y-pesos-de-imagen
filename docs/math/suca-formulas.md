@@ -135,18 +135,38 @@ Mitchell-Netravali y encode directo.
 
 ## 7. Peso mosca
 
-`SucaCompressor.SaveWithOptionalPesoMosca` aproxima el peso objetivo de forma
-descendente (por defecto objetivo 100 KB, maximo 8 iteraciones):
+`SucaCompressor.SaveWithOptionalPesoMosca` hace cumplir un **techo de peso** (opt-in:
+solo si el cliente envia `pesoMoscaKbTarget`; sin techo manda la escala del perfil).
 
 ```
-mientras KB > objetivo y quedan iteraciones:
-    si el formato admite calidad:  q −= 5  (piso 35)  y near-lossless −= 5 (piso 45)
-    si ya no se puede bajar calidad: resize x 0.94 (piso 128x128) y repetir
-    re-encode y volver a medir
+1) Guardado inicial con la decision del perfil.
+2) Si la salida ya cabe y el formato es con perdida:
+      subir calidad de 5 en 5 (tope 95) mientras siga por debajo del 95% del techo.
+      => "mejor calidad posible dentro del techo", sin desperdiciar el margen.
+3) Si no cabe:
+      bajar calidad de 10 en 10 hasta el piso (35, near-lossless 45);
+      luego reducir escala de forma GEOMETRICA:
+          ratio = sqrt(objetivo / peso_actual) * 0.96    (acotado a 0.45..0.97)
+      porque el peso crece aproximadamente con el area (raiz cuadrada).
+      Repetir hasta cumplir o agotar MaxRefineIterations.
+4) Se informa el resultado:
+      pesoObjetivoKb, pesoObjetivoCumplido, pesoIteraciones
 ```
 
-Nunca sube calidad: es una aproximacion por decremento que se detiene en cuanto
-`KB ≤ objetivo`.
+Antes el bucle daba pasos fijos de `×0.94` con 8 iteraciones (maximo `0.61` de reduccion)
+y **se rendia en silencio**: con un techo de 80 KB el archivo podia salir en 500 KB sin
+avisar. Ahora la convergencia es geometrica (1-3 pasos en la practica) y, si aun asi no
+se alcanza, el registro lo dice con `pesoObjetivoCumplido = false` y la UI lo muestra en
+rojo.
+
+Medicion con una foto real de 3.29 MB (5197x7791):
+
+| Techo pedido | Salida | Dimensiones | Cumplido | Iteraciones |
+| --- | --- | --- | --- | --- |
+| sin techo (perfil) | 495.9 KB | 3742x5610 | — | — |
+| **80 KB** | **71.2 KB** | 1529x2291 | si | 5 |
+| 300 KB | 282 KB | 3145x4715 | si | 3 |
+| 1 KB | 0.98 KB | 116x173 | si | 12 |
 
 ## 8. Metricas de salida
 
@@ -291,10 +311,20 @@ Por eso SUCA no promete "80 KB sin perdida": elige la ruta que menos dano hace s
 contenido (near-lossless para documento/UI/huella, perdida controlada para foto) y **mide**
 el resultado para que la decision sea auditable.
 
-### Mejora posible: maximizar calidad dentro del techo
+### Mejora implementada: maximizar calidad dentro del techo
 
-Hoy el peso mosca **solo desciende** (nunca sube calidad para aprovechar el margen). Si se
-quisiera "la mejor calidad posible que quepa en 80 KB", habria que anadir una busqueda
-ascendente (+5 de calidad mientras el peso siga bajo el techo). No esta implementado porque
-rompe la determinacion por hash/perfil que documenta la seccion 3; queda como decision de
-diseno pendiente.
+El peso mosca ahora tiene dos fases: si la salida ya cabe, **sube calidad de 5 en 5** hasta
+rozar el techo (95% del objetivo); si no cabe, baja calidad y reduce escala con paso
+geometrico `sqrt(objetivo/peso)` hasta cumplirlo. Asi "80 KB" significa "lo mejor que quepa
+en 80 KB", no "lo que salga".
+
+Medicion real (foto 3.29 MB, 5197x7791):
+
+| Techo | Salida | Cumplido |
+| --- | --- | --- |
+| sin techo | 495.9 KB (perfil) | — |
+| 80 KB | **71.2 KB** | si, 5 iteraciones |
+| 300 KB | 282 KB | si, 3 iteraciones |
+
+Si el techo es fisicamente inalcanzable, el registro devuelve `pesoObjetivoCumplido=false`
+y la UI lo marca en rojo: el parametro nunca se incumple en silencio.

@@ -82,6 +82,11 @@ namespace SUCA_Compressor.Application.Conversion
         public string? IntegrityVerdict { get; set; }
         public bool IntegrityBitwiseEqual { get; set; }
 
+        // Peso mosca: techo pedido, si se cumplio y cuantas iteraciones costo.
+        public double? PesoObjetivoKb { get; set; }
+        public bool? PesoObjetivoCumplido { get; set; }
+        public int PesoIteraciones { get; set; }
+
         public string OriginalFile { get; set; } = "";
         public string ConvertedFile { get; set; } = "";
         public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
@@ -1110,7 +1115,9 @@ namespace SUCA_Compressor.Application.Conversion
             var profile = command.Profile ?? new SucaProfile { A = 0, B = 1, C = 1, D = 3 };
             profile.Validate();
 
-            var options = command.Options ?? new SucaOptions();
+            // Sin opciones explicitas NO se aplica techo de peso: la escala la decide el
+            // perfil/hash. El techo (peso mosca) es opt-in via pesoMoscaKbTarget.
+            var options = command.Options ?? new SucaOptions { EnablePesoMosca = false };
             options.PreferredFormat = format switch
             {
                 ConversionTargetFormat.Jpeg => SucaOutputFormat.Jpeg,
@@ -1152,6 +1159,11 @@ namespace SUCA_Compressor.Application.Conversion
                 record.IntegrityVerdict = integrity.Verdict;
                 record.IntegrityBitwiseEqual = integrity.BitwiseEqual;
             }
+
+            // Peso mosca: queda constancia de si el techo pedido se cumplio.
+            record.PesoObjetivoKb = result.PesoObjetivoKb;
+            record.PesoObjetivoCumplido = result.PesoObjetivoCumplido;
+            record.PesoIteraciones = result.PesoIteraciones;
 
             FillOutputMetrics(record, convertedBytes, record.ConvertedWidth, record.ConvertedHeight, format);
 

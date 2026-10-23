@@ -57,9 +57,9 @@
         </label>
         <label class="field">
           <span class="field-label">Peso objetivo (KB)
-            <span class="tip-dot" data-tip-title="Peso objetivo" data-tip="Peso mosca: si la salida supera este tamano, el kernel baja calidad de 5 en 5 y, si no basta, reduce dimensiones x0.94 hasta acercarse. Vacio = 100 KB por defecto. La perdida queda medida en el reporte de integridad (SSIM/PSNR)." tabindex="0" role="note">?</span>
+            <span class="tip-dot" data-tip-title="Peso objetivo" data-tip="Techo de peso: si la salida lo supera, el kernel baja calidad y reduce dimensiones de forma geometrica hasta cumplirlo, y si sobra margen sube calidad. Vacio = sin techo (manda la escala del perfil A-D). El resultado se verifica y se marca 'cumplido' o 'no cumplido'." tabindex="0" role="note">?</span>
           </span>
-          <input id="peso-objetivo" type="number" min="1" max="20000" step="5" placeholder="100">
+          <input id="peso-objetivo" type="number" min="1" max="20000" step="5" placeholder="sin techo">
         </label>
         <label class="field">
           <span class="field-label">Sin perdida (PNG)

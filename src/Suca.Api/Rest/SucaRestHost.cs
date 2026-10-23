@@ -525,15 +525,13 @@ namespace SUCA_Compressor
                     return Results.BadRequest(new { error = "pesoMoscaKbTarget debe estar entre 1 y 20000 KB.", errorCode = ConversionErrorCodes.InvalidFormat });
 
                 bool? allowLossy = FormBoolNullable(form, "allowLossy");
-                if (targetKb.HasValue || allowLossy.HasValue)
+                command.Options = new SucaOptions
                 {
-                    command.Options = new SucaOptions
-                    {
-                        EnablePesoMosca = targetKb.HasValue || allowLossy is null,
-                        PesoMoscaKbTarget = targetKb ?? 100.0,
-                        AllowLossy = allowLossy ?? true
-                    };
-                }
+                    // El techo de peso es opt-in: si el cliente no lo pide, no se recorta.
+                    EnablePesoMosca = targetKb.HasValue,
+                    PesoMoscaKbTarget = targetKb ?? 100.0,
+                    AllowLossy = allowLossy ?? true
+                };
 
                 int timeoutSeconds = Math.Max(5, effective.Web.ConvertTimeoutSeconds ?? 180);
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(LinkToken(http, ct));
@@ -1361,7 +1359,12 @@ namespace SUCA_Compressor
                 if (target < 1 || target > 20000)
                     return Results.BadRequest(new { error = "pesoMoscaKbTarget debe estar entre 1 y 20000 KB." });
 
-                command.Options ??= new SucaOptions();
+                command.Options ??= new SucaOptions
+                {
+                    // El techo es opt-in tambien por MCP: sin pesoMoscaKbTarget no se recorta.
+                    EnablePesoMosca = false,
+                    PesoMoscaKbTarget = 100.0
+                };
                 command.Options.PesoMoscaKbTarget = target;
                 command.Options.EnablePesoMosca = true;
             }
@@ -1369,7 +1372,7 @@ namespace SUCA_Compressor
             if (payload.TryGetProperty("allowLossy", out JsonElement lossyElement)
                 && lossyElement.ValueKind is JsonValueKind.True or JsonValueKind.False)
             {
-                command.Options ??= new SucaOptions();
+                command.Options ??= new SucaOptions { EnablePesoMosca = false };
                 command.Options.AllowLossy = lossyElement.GetBoolean();
             }
             // Apply user defaults for any value the payload omitted.
