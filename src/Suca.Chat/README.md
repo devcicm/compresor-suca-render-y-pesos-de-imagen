@@ -2,7 +2,7 @@
 
 Modulo minimalista de chat conversacional con RAG y entrega confiable.
 
-El estado persistente se guarda fuera del codigo, en `runtime/chat/`, y debe permanecer ignorado por Git. La UI se sirve desde `http://127.0.0.1:5077/minichat/` cuando el host se inicia con `--rest`.
+El estado persistente se guarda fuera del codigo, en `runtime/chat/`, y debe permanecer ignorado por Git. La interfaz es la vista **Chat** dentro del shell SUCA Studio (`http://127.0.0.1:5077/studio#/chat`); la ruta `/minichat` redirige alli cuando el host se inicia en modo web.
 
 Objetivos:
 
