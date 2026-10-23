@@ -68,6 +68,12 @@ Todavia no hay release publicada: este es el estado actual del codigo de `main`.
 
 ### Corregido
 
+- **La calidad pedida se ignoraba en el motor SUCA**: con `quality=10` y `quality=90` el
+  archivo salia identico, aunque el registro mostraba la calidad pedida. Ahora
+  `SucaOptions.QualityOverride` la aplica (los suelos por contenido solo actuan si no hay
+  calidad explicita), el peso mosca puede bajarla para cumplir el techo y el registro guarda
+  la **calidad realmente aplicada**. Medido: 6.3 KB (q10) vs 117.5 KB (q90); con techo de
+  40 KB y q90 el resultado queda en q80.
 - **El techo de peso no se cumplia**: con objetivo 80 KB un archivo de 3.29 MB salia en
   495 KB. El bucle hacia 8 pasos fijos de `x0.94` (maximo 0.61 de reduccion) y se rendia en
   silencio. Ahora baja calidad y reduce escala con paso geometrico `sqrt(objetivo/peso)`

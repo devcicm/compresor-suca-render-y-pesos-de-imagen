@@ -1126,6 +1126,11 @@ namespace SUCA_Compressor.Application.Conversion
             // Sin opciones explicitas NO se aplica techo de peso: la escala la decide el
             // perfil/hash. El techo (peso mosca) es opt-in via pesoMoscaKbTarget.
             var options = command.Options ?? new SucaOptions { EnablePesoMosca = false };
+
+            // La calidad pedida manda en el kernel: antes se ignoraba y el registro
+            // mostraba una calidad que no se habia aplicado.
+            if (command.Quality is >= 1 and <= 100)
+                options.QualityOverride = command.Quality;
             options.PreferredFormat = format switch
             {
                 ConversionTargetFormat.Jpeg => SucaOutputFormat.Jpeg,
@@ -1154,6 +1159,11 @@ namespace SUCA_Compressor.Application.Conversion
             record.ConvertedHeight = info?.Height ?? result.Decision.NewHeight;
             record.SavingPercent = result.SavingPercent;
             record.SucaHash = result.Decision.Hash;
+
+            // Calidad REAL aplicada por el kernel (puede diferir de la pedida si el peso
+            // mosca la bajo para cumplir el techo). Antes se guardaba la pedida y la UI
+            // mostraba un valor que no correspondia al archivo.
+            record.Quality = result.Decision.Quality;
 
             // El kernel genera el reporte de integridad perceptual (SSIM, PSNR,
             // retencion de bordes). Deja de ser un dato interno: viaja con el registro.

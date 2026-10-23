@@ -198,6 +198,13 @@ namespace SUCA_Compressor
         public int MinHeight { get; set; } = 192;
         public bool GenerateIntegrityReport { get; set; } = true;
 
+        /// <summary>
+        /// Calidad pedida por el usuario. Si se informa, manda sobre la calidad derivada
+        /// del hash y respeta el valor exacto (el peso mosca aun puede bajarla para
+        /// cumplir el techo). Null = calidad por perfil/hash (comportamiento historico).
+        /// </summary>
+        public int? QualityOverride { get; set; }
+
         // Optimizacion para techo de peso: en vez de un solo perfil, explora varias
         // escalas y, para cada una, la mejor calidad que quepa; elige la combinacion
         // con mejor puntuacion de calidad/legibilidad. Requiere PesoMoscaKbTarget.
@@ -659,7 +666,13 @@ namespace SUCA_Compressor
             int exHash = profile.ExtendedHash();
 
             double scale = SucaMath.FactorEscalaBase(profile.A, profile.B, profile.C, profile.D, analysis.InputKb);
-            int quality = SucaMath.CalidadBase(hash, analysis.InputKb);
+
+            // La calidad pedida manda. Si no hay calidad explicita se usa la derivada
+            // del hash y del peso (comportamiento historico del kernel).
+            bool qualityFromUser = options.QualityOverride is >= 1 and <= 100;
+            int quality = qualityFromUser
+                ? options.QualityOverride!.Value
+                : SucaMath.CalidadBase(hash, analysis.InputKb);
 
             // Protección de imágenes pequeñas
             if (options.PreserveSmallImages)
@@ -670,33 +683,35 @@ namespace SUCA_Compressor
                 else if (px <= 1_500_000) scale = Math.Max(scale, 0.46);
             }
 
-            // Ajuste por contenido
+            // Ajuste por contenido. Los suelos de ESCALA siempre protegen la resolucion;
+            // los suelos de CALIDAD solo aplican si la calidad no la fijo el usuario,
+            // porque un valor explicito debe cumplirse tal cual.
             switch (analysis.Kind)
             {
                 case ImageContentKind.Document:
                     scale = Math.Max(scale, 0.72);
-                    quality = Math.Max(quality, 78);
+                    if (!qualityFromUser) quality = Math.Max(quality, 78);
                     break;
 
                 case ImageContentKind.Ui:
                     scale = Math.Max(scale, 0.78);
-                    quality = Math.Max(quality, 82);
+                    if (!qualityFromUser) quality = Math.Max(quality, 82);
                     break;
 
                 case ImageContentKind.Fingerprint:
                     // Para huella: preservar crestas, no castigar demasiado.
                     scale = Math.Max(scale, 0.84);
-                    quality = Math.Max(quality, 88);
+                    if (!qualityFromUser) quality = Math.Max(quality, 88);
                     break;
 
                 case ImageContentKind.Graphic:
                     scale = Math.Max(scale, 0.85);
-                    quality = Math.Max(quality, 84);
+                    if (!qualityFromUser) quality = Math.Max(quality, 84);
                     break;
 
                 case ImageContentKind.Photo:
-                    // Foto sí aguanta más compresión.
-                    quality = Math.Min(quality, 90);
+                    // Foto sí aguanta más compresión (solo si la calidad no la fijo el usuario).
+                    if (!qualityFromUser) quality = Math.Min(quality, 90);
                     break;
             }
 
@@ -1596,6 +1611,7 @@ namespace SUCA_Compressor
             var swSave = Stopwatch.StartNew();
             bool pesoCumplido;
             int pesoIteraciones;
+            int qualityFinal;
 
             if (options.OptimizeForTarget && options.EnablePesoMosca && options.PesoMoscaKbTarget > 0
                 && decision.OutputFormat is SucaOutputFormat.Jpeg or SucaOutputFormat.Webp)
@@ -1617,17 +1633,22 @@ namespace SUCA_Compressor
                     decision.Quality = optQuality ?? decision.Quality;
                     decision.NewWidth = optW;
                     decision.NewHeight = optH;
+                    qualityFinal = decision.Quality;
                 }
                 else
                 {
                     // Ningun candidato cupo: se usa el camino clasico sobre la imagen
                     // ya escalada por el perfil (nunca se deja la salida sin escribir).
-                    (pesoCumplido, pesoIteraciones) = SaveWithOptionalPesoMosca(image, outputPath, decision, options, cancellationToken);
+                    (pesoCumplido, pesoIteraciones, qualityFinal) =
+                        SaveWithOptionalPesoMosca(image, outputPath, decision, options, cancellationToken);
+                    decision.Quality = qualityFinal;
                 }
             }
             else
             {
-                (pesoCumplido, pesoIteraciones) = SaveWithOptionalPesoMosca(image, outputPath, decision, options, cancellationToken);
+                (pesoCumplido, pesoIteraciones, qualityFinal) =
+                    SaveWithOptionalPesoMosca(image, outputPath, decision, options, cancellationToken);
+                decision.Quality = qualityFinal;
             }
 
             swSave.Stop();
@@ -1681,7 +1702,7 @@ namespace SUCA_Compressor
         ///    rendirse tras N pasos fijos de 0.94.
         /// Devuelve si el objetivo se cumplio y cuantas iteraciones se usaron.
         /// </summary>
-        private static (bool cumplido, int iteraciones) SaveWithOptionalPesoMosca(
+        private static (bool cumplido, int iteraciones, int qualityFinal) SaveWithOptionalPesoMosca(
             Image<Rgba32> image,
             string outputPath,
             SucaDecision decision,
@@ -1693,7 +1714,7 @@ namespace SUCA_Compressor
             SaveByDecision(image, outputPath, decision, cancellationToken);
 
             if (!options.EnablePesoMosca || options.PesoMoscaKbTarget <= 0)
-                return (true, 0);
+                return (true, 0, decision.Quality);
 
             double target = options.PesoMoscaKbTarget;
             double kb = FileSizeKb(outputPath);
@@ -1717,14 +1738,16 @@ namespace SUCA_Compressor
             };
 
             // 1) Hay margen: subir calidad mientras quepa (90% del techo, para no rozarlo).
+            // Nunca por encima de la calidad pedida por el usuario.
             if (kb <= target * 0.9 && lossy)
             {
                 int q = decision.Quality;
                 int nlq = decision.NearLosslessQuality;
                 double budget = target * 0.95;
+                int maxQuality = Math.Clamp(options.QualityOverride ?? 95, 1, 95);
                 string probePath = outputPath + ".probe";
 
-                while (q < 95)
+                while (q < maxQuality)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
@@ -1748,7 +1771,7 @@ namespace SUCA_Compressor
                 }
 
                 TryDeleteFile(probePath);
-                return (true, iterations);
+                return (true, iterations, q);
             }
 
             // 2) No cabe: bajar calidad al piso y despues reducir escala geometricamente.
@@ -1805,7 +1828,7 @@ namespace SUCA_Compressor
             }
 
             // Tolerancia del 2% por redondeos de encoder; si no, se informa sin mentir.
-            return (kb <= target * 1.02, iterations);
+            return (kb <= target * 1.02, iterations, currentQ);
         }
 
         private static double FileSizeKb(string path) => new FileInfo(path).Length / 1024.0;
@@ -1878,8 +1901,10 @@ namespace SUCA_Compressor
                     }));
 
                     // Maxima calidad que cabe: de mayor a menor, primera que cumple.
+                    // Nunca por encima de la calidad pedida por el usuario.
+                    int maxQuality = Math.Clamp(options.QualityOverride ?? 95, 1, 95);
                     int chosenQuality = 0;
-                    foreach (int q in new[] { 92, 84, 76, 66, 55, 45, 35 })
+                    foreach (int q in new[] { 92, 84, 76, 66, 55, 45, 35 }.Where(v => v <= maxQuality))
                     {
                         cancellationToken.ThrowIfCancellationRequested();
 

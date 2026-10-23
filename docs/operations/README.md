@@ -120,7 +120,7 @@ Toda coleccion referenciada (al crear, mover imagenes o convertir) se registra e
   el lote tarda mas; la UI lo indica en el tooltip. Para volumen alto, usar el modo simple
   (solo `pesoMoscaKbTarget`) y reservar la optimizacion para imagenes criticas.
 
-Cada conversion registra y expone: formato y dimensiones de entrada y salida, bytes, megapixeles, presencia de EXIF, bits por pixel, ratio de compresion, porcentaje de ahorro, duracion (ms), motor, calidad, hash SUCA (modo suca), estado, `correlationId` e historial de estados.
+Cada conversion registra y expone: formato y dimensiones de entrada y salida, bytes, megapixeles, presencia de EXIF, bits por pixel, ratio de compresion, porcentaje de ahorro, duracion (ms), motor, **calidad aplicada** (en SUCA es la que realmente uso el kernel: puede ser menor que la pedida si el techo de peso la bajo), hash SUCA (modo suca), estado, `correlationId` e historial de estados. La calidad pedida por el usuario se respeta en el kernel SUCA; los suelos por tipo de contenido (documento/UI/huella) solo aplican cuando no se pidio una calidad explicita.
 
 **Integridad perceptual (motor SUCA)**: el kernel genera un reporte que ahora viaja con el registro y se muestra en la UI: `integritySsim`, `integrityPsnr` (dB), `integrityEdgeRetention`, `integrityHistogram`, `integrityMode` (`perceptual` o `lossless-strong`), `integrityVerdict` y `integrityBitwiseEqual`. Criterio de aceptacion: `SSIM >= 0.88`, bordes `>= 0.80` y histograma `>= 0.84`. `integrityBitwiseEqual = true` solo cuando los SHA-256 coinciden (sin perdida real). El motor directo no emite reporte. Detalle matematico en [docs/math/suca-formulas.md](../math/suca-formulas.md).
 

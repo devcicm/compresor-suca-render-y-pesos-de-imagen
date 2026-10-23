@@ -94,7 +94,14 @@ escala = clamp( baseEscala · wobble · penal(KB), 0.25, 1.0 )
 
 ## 4. Calidad de pixeles
 
-`SucaMath.CalidadBase` deriva la calidad de compresion del hash y del peso:
+Dos fuentes, con precedencia clara:
+
+1. **Calidad pedida por el usuario** (`quality` en la API/UI, `SucaOptions.QualityOverride`):
+   si viene informada, **manda** y se aplica tal cual. Los suelos de calidad por contenido
+   (78/82/84/88) **no** se aplican encima de un valor explicito, porque el parametro debe
+   cumplirse. Los suelos de **escala** si se mantienen (protegen la resolucion).
+2. **Calidad derivada del perfil** (cuando no hay valor explicito, p. ej. ordenes sin
+   `quality`): sale del hash y del peso de entrada.
 
 ```
 vari  = (sin(hash) + 1) / 2            // 0 .. 1, determinista por perfil
@@ -103,8 +110,18 @@ qBase = 60 + vari · 39                 // 60 .. 99
 KB     :   0    2000    3000    4000    8000   16000
 delta  :   0     −5     −10     −15     −20     −25
 
-calidad = clamp(qBase + delta, 35, 99)
+calidad = clamp(qBase + delta, 35, 99)   // solo si no hay calidad pedida
 ```
+
+El **peso mosca puede bajar** la calidad para cumplir el techo, y el registro guarda la
+**calidad realmente aplicada** (`decision.Quality`), no la pedida. Ejemplo medido:
+
+| Pedida | Techo | Calidad real | Salida |
+| --- | --- | --- | --- |
+| 10 | sin techo | 10 | 6.3 KB |
+| 90 | sin techo | 90 | 117.5 KB |
+| 90 | 40 KB | **80** (bajada por el techo) | 21.1 KB |
+| 60 + optimizar | 40 KB | **45** (nunca por encima de 60) | 31.3 KB |
 
 ## 5. Decisiones correctivas
 
