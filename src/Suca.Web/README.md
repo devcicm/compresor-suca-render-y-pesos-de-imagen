@@ -29,6 +29,29 @@ wwwroot/
 - Cuando una clase define `display` (ej. `.overlay`), su version oculta se declara con selector compuesto (`.overlay[hidden]`).
 - Mobile-first; breakpoints 768/900/1024; soporte `prefers-reduced-motion` y `focus-visible`.
 
+## Componentes de UI compartidos (`js/ui/`)
+
+Regla: si dos vistas necesitan el mismo bloque de interfaz o el mismo mapeo de datos,
+vive en `js/ui/` y se importa. No se copia (antipatron DRY).
+
+| Modulo | Responsabilidad |
+| --- | --- |
+| `ui/options.js` | Lectura/escritura unica de los controles de conversion (`readOptions`, `applyOptions`, `overridesFromOptions`, `appendOptionsToForm`). Ninguna vista vuelve a mapear campo por campo. |
+| `ui/chips.js` | Chips de integridad, techo de peso y legibilidad (`integrityChips`, `pesoObjetivoChip`, `legibilityChip`, `integrityDetailChips`). Una sola redaccion para cola, tarjetas y detalle. |
+| `ui/dialog.js` | `confirmDialog` / `promptDialog` propios, con foco atrapado, `Escape`, validacion y estilo del tema. Reemplazan `window.confirm`/`window.prompt`, que bloquean, no se estilizan y no son accesibles. |
+
+### Patrones de formulario obligatorios
+
+- **Agrupacion semantica**: los ajustes van en `fieldset` + `legend` (Peso y calidad, Salida).
+- **Divulgacion progresiva**: lo secundario (perfiles guardados) vive en `<details>`; no compite
+  visualmente con lo que se usa en cada conversion.
+- **Nada silencioso**: una opcion que no aplica se explica en su tooltip y en los chips de
+  resultado (por ejemplo "objetivo 80 KB cumplido/no cumplido", "optimizado: N candidatos",
+  "legible/legibilidad en riesgo"). Nunca se ignora un valor sin decirlo.
+- **Reutilizar lo optimo**: el panel `#optimal-panel` muestra lo que eligio el optimizador y
+  ofrece "Aplicar a pendientes" y "Guardar como perfil", para no re-teclear valores.
+- **Confirmaciones destructivas** con `confirmDialog` y etiqueta explicita (`danger: true`).
+
 ## Router y navegacion
 
 La navegacion es **multipage real**: cada servicio es su propia pagina HTML y el navegador gestiona la navegacion (sin router JS ni secciones ocultas).

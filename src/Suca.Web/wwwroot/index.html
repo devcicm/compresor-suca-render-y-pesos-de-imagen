@@ -24,109 +24,138 @@
       <h2>Opciones
         <span class="tip-dot" data-tip-title="Opciones de conversion" data-tip="Se aplican a todos los archivos de la cola. Los valores iniciales provienen de tus ajustes (scope usuario o sistema)." tabindex="0" role="note">?</span>
       </h2>
-      <div class="preset-row">
-        <label class="field field-inline">
-          <span class="field-label">Preset
-            <span class="tip-dot" data-tip-title="Presets" data-tip="Un preset guarda motor, formato, calidad, dimensiones y coleccion. Aplicar un preset a la cola lo usa en todos los pendientes; a las marcadas solo en esas. Se guardan en tus ajustes." tabindex="0" role="note">?</span>
-          </span>
-          <select id="preset-select">
-            <option value="">(sin preset)</option>
-          </select>
-        </label>
-        <button id="preset-apply" type="button" class="btn">Aplicar</button>
-        <button id="preset-apply-selected" type="button" class="btn">Aplicar a marcadas</button>
-        <button id="preset-save" type="button" class="btn">Guardar actual</button>
-        <button id="preset-delete" type="button" class="btn btn-danger" disabled>Borrar</button>
-        <input id="preset-name" type="text" placeholder="nombre del preset" maxlength="40" hidden>
-        <span id="preset-status" class="muted-note" role="status"></span>
+      <details class="preset-box" id="preset-box">
+        <summary>Perfiles guardados
+          <span class="tip-dot" data-tip-title="Perfiles" data-tip="Un perfil guarda motor, formato, calidad, perfil A-D, techo de peso y optimizacion. Aplicarlo a la cola lo usa en todos los pendientes; a las marcadas solo en esas." tabindex="0" role="note">?</span>
+        </summary>
+        <div class="preset-row">
+          <label class="field field-inline">
+            <span class="field-label">Perfil</span>
+            <select id="preset-select">
+              <option value="">(sin perfil)</option>
+            </select>
+          </label>
+          <button id="preset-apply" type="button" class="btn">Aplicar a la cola</button>
+          <button id="preset-apply-selected" type="button" class="btn">Aplicar a marcadas</button>
+          <button id="preset-save" type="button" class="btn btn-primary">Guardar actual...</button>
+          <button id="preset-delete" type="button" class="btn btn-danger" disabled>Borrar</button>
+          <span id="preset-status" class="muted-note" role="status"></span>
+        </div>
+      </details>
+
+      <div id="optimal-panel" class="optimal-panel" hidden>
+        <div class="optimal-head">
+          <strong>Valores optimos de la ultima conversion</strong>
+          <span class="muted-note">El optimizador probo varias escalas y calidades; estos son los valores con los que se quedo.</span>
+        </div>
+        <div id="optimal-chips" class="chip-row"></div>
+        <div class="btn-row">
+          <button id="optimal-apply" type="button" class="btn">Aplicar a pendientes
+            <span class="tip-dot" data-tip-title="Aplicar optimos" data-tip="Copia techo, optimizacion, perfil A-D y formato a las imagenes pendientes de la cola como override." data-tip-pos="top" tabindex="0" role="note">?</span>
+          </button>
+          <button id="optimal-save-profile" type="button" class="btn">Guardar como perfil
+            <span class="tip-dot" data-tip-title="Guardar optimos" data-tip="Guarda estos valores como un perfil reutilizable en tus ajustes, para aplicarlo a futuras conversiones." data-tip-pos="top" tabindex="0" role="note">?</span>
+          </button>
+        </div>
       </div>
-      <div class="grid-options">
-        <label class="field">
-          <span class="field-label">Perfil SUCA (A·B·C·D)
-            <span class="tip-dot" data-tip-title="Perfil SUCA" data-tip="Cuatro digitos de 0 a 9 que alimentan la matriz de factorizacion del kernel (M=[[3,2],[1,4]]). Cada combinacion produce una escala y una calidad deterministas. Por defecto 0-1-1-3. Dejalo vacio para usar el perfil del kernel." tabindex="0" role="note">?</span>
-          </span>
-          <span class="profile-row">
-            <input id="profile-a" type="number" min="0" max="9" step="1" placeholder="0" aria-label="Perfil A">
-            <span class="profile-dot">·</span>
-            <input id="profile-b" type="number" min="0" max="9" step="1" placeholder="1" aria-label="Perfil B">
-            <span class="profile-dot">·</span>
-            <input id="profile-c" type="number" min="0" max="9" step="1" placeholder="1" aria-label="Perfil C">
-            <span class="profile-dot">·</span>
-            <input id="profile-d" type="number" min="0" max="9" step="1" placeholder="3" aria-label="Perfil D">
-          </span>
-        </label>
-        <label class="field">
-          <span class="field-label">Peso objetivo (KB)
-            <span class="tip-dot" data-tip-title="Peso objetivo" data-tip="Techo de peso: si la salida lo supera, el kernel baja calidad y reduce dimensiones de forma geometrica hasta cumplirlo, y si sobra margen sube calidad. Vacio = sin techo (manda la escala del perfil A-D). El resultado se verifica y se marca 'cumplido' o 'no cumplido'." tabindex="0" role="note">?</span>
-          </span>
-          <input id="peso-objetivo" type="number" min="1" max="20000" step="5" placeholder="sin techo">
-        </label>
-        <label class="field">
-          <span class="field-label">Sin perdida (PNG)
-            <span class="tip-dot" data-tip-title="Sin perdida" data-tip="Fuerza PNG sin cuantizacion: los pixeles de salida son exactos. El tamano sube mucho y, si hay peso objetivo, el unico ajuste posible sera reducir dimensiones (lo que si cambia los pixeles). Solo motor SUCA." tabindex="0" role="note">?</span>
-          </span>
-          <label class="toggle"><input id="allow-lossy" type="checkbox" checked><span>Permitir compresion con perdida</span></label>
-        </label>
-        <label class="field">
-          <span class="field-label">Optimizar para el techo
-            <span class="tip-dot" data-tip-title="Optimizar" data-tip="Con peso objetivo, explora varias escalas y para cada una la maxima calidad que cabe; elige la combinacion con mejor puntuacion de calidad y legibilidad (prioriza bordes en documentos, UI y huellas; SSIM en fotos). Requiere peso objetivo. Cuesta mas tiempo: varias codificaciones por imagen." tabindex="0" role="note">?</span>
-          </span>
-          <label class="toggle"><input id="optimize-target" type="checkbox"><span>Buscar la mejor calidad que quepa</span></label>
-        </label>
-        <label class="field">
-          <span class="field-label">Motor
-            <span class="tip-dot" data-tip-title="Motor" data-tip="SUCA: pipeline completo con perfil A-D, peso mosca y reporte de integridad (primera opcion). Directo: re-encodado con ImageSharp, mas rapido y predecible." tabindex="0" role="note">?</span>
-          </span>
-          <select id="engine">
-            <option value="suca" selected>Pipeline SUCA</option>
-            <option value="direct">Directo (re-encodar)</option>
-          </select>
-        </label>
-        <label class="field">
-          <span class="field-label">Formato destino
-            <span class="tip-dot" data-tip-title="Formato" data-tip="WebP suele dar el mejor ahorro con buena calidad. JPEG no soporta transparencia. PNG es sin perdida." tabindex="0" role="note">?</span>
-          </span>
-          <select id="format">
-            <option value="webp" selected>WebP (.webp)</option>
-            <option value="jpeg">JPEG (.jpg)</option>
-            <option value="png">PNG (.png)</option>
-          </select>
-        </label>
-        <label class="field">
-          <span class="field-label">Calidad (JPEG/WebP)
-            <span class="tip-dot" data-tip-title="Calidad" data-tip="1-100. Afecta a JPEG y WebP; PNG la ignora. 80 es un buen equilibrio." tabindex="0" role="note">?</span>
-          </span>
-          <span class="quality-row">
-            <input id="quality" type="range" min="1" max="100" step="1" value="80">
-            <output id="quality-out">80</output>
-          </span>
-        </label>
-        <div class="field-pair">
+      <fieldset class="option-group">
+        <legend>Peso, calidad y optimizacion
+          <span class="tip-dot" data-tip-title="Como se decide" data-tip="El perfil A-D fija la escala y la calidad de partida. El techo de peso se verifica y, si activas optimizar, se buscan varias combinaciones de escala y calidad para quedarse con la mejor." tabindex="0" role="note">?</span>
+        </legend>
+        <div class="grid-options">
           <label class="field">
-            <span class="field-label">Ancho max.
-              <span class="tip-dot" data-tip-title="Redimensionar" data-tip="Si defines ancho o alto maximo, la imagen se reduce manteniendo proporcion. Vacio = tamano original." tabindex="0" role="note">?</span>
+            <span class="field-label">Perfil SUCA (A·B·C·D)
+              <span class="tip-dot" data-tip-title="Perfil SUCA" data-tip="Cuatro digitos de 0 a 9 que alimentan la matriz de factorizacion del kernel (M=[[3,2],[1,4]]). Cada combinacion produce una escala y una calidad deterministas. Por defecto 0-1-1-3. Dejalo vacio para usar el perfil del kernel." tabindex="0" role="note">?</span>
             </span>
-            <input id="max-width" type="number" min="16" placeholder="original">
+            <span class="profile-row">
+              <input id="profile-a" type="number" min="0" max="9" step="1" placeholder="0" aria-label="Perfil A">
+              <span class="profile-dot">·</span>
+              <input id="profile-b" type="number" min="0" max="9" step="1" placeholder="1" aria-label="Perfil B">
+              <span class="profile-dot">·</span>
+              <input id="profile-c" type="number" min="0" max="9" step="1" placeholder="1" aria-label="Perfil C">
+              <span class="profile-dot">·</span>
+              <input id="profile-d" type="number" min="0" max="9" step="1" placeholder="3" aria-label="Perfil D">
+            </span>
           </label>
           <label class="field">
-            <span class="field-label">Alto max.</span>
-            <input id="max-height" type="number" min="16" placeholder="original">
+            <span class="field-label">Peso objetivo (KB)
+              <span class="tip-dot" data-tip-title="Peso objetivo" data-tip="Techo de peso: si la salida lo supera, el kernel baja calidad y reduce dimensiones de forma geometrica hasta cumplirlo, y si sobra margen sube calidad. Vacio = sin techo (manda la escala del perfil A-D). El resultado se verifica y se marca 'cumplido' o 'no cumplido'." tabindex="0" role="note">?</span>
+            </span>
+            <input id="peso-objetivo" type="number" min="1" max="20000" step="5" placeholder="sin techo">
+          </label>
+          <label class="field field-toggle">
+            <span class="field-label">Optimizar
+              <span class="tip-dot" data-tip-title="Optimizar" data-tip="Con peso objetivo, explora varias escalas y para cada una la maxima calidad que cabe; elige la combinacion con mejor puntuacion de calidad y legibilidad (prioriza bordes en documentos, UI y huellas; SSIM en fotos). Requiere peso objetivo; cuesta mas tiempo." tabindex="0" role="note">?</span>
+            </span>
+            <span class="toggle"><input id="optimize-target" type="checkbox"><span>Buscar la mejor calidad que quepa</span></span>
+          </label>
+          <label class="field field-toggle">
+            <span class="field-label">Sin perdida
+              <span class="tip-dot" data-tip-title="Sin perdida" data-tip="Fuerza PNG sin cuantizacion: los pixeles de salida son exactos. El tamano sube mucho y, si hay peso objetivo, el unico ajuste posible sera reducir dimensiones (lo que si cambia los pixeles). Solo motor SUCA." tabindex="0" role="note">?</span>
+            </span>
+            <span class="toggle"><input id="allow-lossy" type="checkbox" checked><span>Permitir compresion con perdida</span></span>
           </label>
         </div>
-        <label class="field">
-          <span class="field-label">Coleccion
-            <span class="tip-dot" data-tip-title="Coleccion" data-tip="Categoria de galeria para agrupar resultados (ej.: facturas, web). Consultable por API: /api/web/collections/{nombre}/images." tabindex="0" role="note">?</span>
-          </span>
-          <input id="collection" type="text" list="collection-list" placeholder="general">
-          <datalist id="collection-list"></datalist>
-        </label>
-        <label class="field field-toggle">
-          <span class="field-label">Metadatos
-            <span class="tip-dot" data-tip-title="Metadatos" data-tip="Quita EXIF, ICC e IPTC de la imagen convertida (privacidad y peso)." tabindex="0" role="note">?</span>
-          </span>
-          <span class="toggle"><input id="remove-metadata" type="checkbox" checked><span>Quitar EXIF/ICC</span></span>
-        </label>
-      </div>
+      </fieldset>
+
+      <fieldset class="option-group">
+        <legend>Salida</legend>
+        <div class="grid-options">
+          <label class="field">
+            <span class="field-label">Motor
+              <span class="tip-dot" data-tip-title="Motor" data-tip="SUCA: pipeline completo con perfil A-D, peso mosca y reporte de integridad (primera opcion). Directo: re-encodado con ImageSharp, mas rapido y predecible." tabindex="0" role="note">?</span>
+            </span>
+            <select id="engine">
+              <option value="suca" selected>Pipeline SUCA</option>
+              <option value="direct">Directo (re-encodar)</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">Formato destino
+              <span class="tip-dot" data-tip-title="Formato" data-tip="WebP suele dar el mejor ahorro con buena calidad. JPEG no soporta transparencia. PNG es sin perdida." tabindex="0" role="note">?</span>
+            </span>
+            <select id="format">
+              <option value="webp" selected>WebP (.webp)</option>
+              <option value="jpeg">JPEG (.jpg)</option>
+              <option value="png">PNG (.png)</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">Calidad (JPEG/WebP)
+              <span class="tip-dot" data-tip-title="Calidad" data-tip="1-100. Afecta a JPEG y WebP; PNG la ignora. 80 es un buen equilibrio. Si activas optimizar, el kernel puede ajustarla para caber en el techo." tabindex="0" role="note">?</span>
+            </span>
+            <span class="quality-row">
+              <input id="quality" type="range" min="1" max="100" step="1" value="80">
+              <output id="quality-out">80</output>
+            </span>
+          </label>
+          <div class="field-pair">
+            <label class="field">
+              <span class="field-label">Ancho max.
+                <span class="tip-dot" data-tip-title="Redimensionar" data-tip="Si defines ancho o alto maximo, la imagen se reduce manteniendo proporcion. Vacio = tamano original." tabindex="0" role="note">?</span>
+              </span>
+              <input id="max-width" type="number" min="16" placeholder="original">
+            </label>
+            <label class="field">
+              <span class="field-label">Alto max.</span>
+              <input id="max-height" type="number" min="16" placeholder="original">
+            </label>
+          </div>
+          <label class="field">
+            <span class="field-label">Coleccion
+              <span class="tip-dot" data-tip-title="Coleccion" data-tip="Categoria de galeria para agrupar resultados (ej.: facturas, web). Consultable por API: /api/web/collections/{nombre}/images." tabindex="0" role="note">?</span>
+            </span>
+            <input id="collection" type="text" list="collection-list" placeholder="general">
+            <datalist id="collection-list"></datalist>
+          </label>
+          <label class="field field-toggle">
+            <span class="field-label">Metadatos
+              <span class="tip-dot" data-tip-title="Metadatos" data-tip="Quita EXIF, ICC e IPTC de la imagen convertida (privacidad y peso)." tabindex="0" role="note">?</span>
+            </span>
+            <span class="toggle"><input id="remove-metadata" type="checkbox" checked><span>Quitar EXIF/ICC</span></span>
+          </label>
+        </div>
+      </fieldset>
     </div>
 
     <div class="card dropzone" id="dropzone" role="button" tabindex="0" aria-label="Arrastre imagenes o carpetas aqui, o haga clic para seleccionar">
@@ -178,7 +207,7 @@
           <span class="tip-dot" data-tip-title="Carpeta del servidor" data-tip="Ruta en el disco donde corre SUCA. Usela con Explorar para navegarla, o Valide para comprobar cuantas imagenes contiene antes de convertir." tabindex="0" role="note">?</span>
         </span>
         <span class="btn-row">
-          <input id="order-directory" type="text" placeholder="C:\\imagenes\\lote" style="flex:1 1 240px">
+          <input id="order-directory" type="text" class="order-directory-input" placeholder="C:\\imagenes\\lote">
           <button id="browse-folder-button" type="button" class="btn">Explorar...</button>
           <button id="order-validate" type="button" class="btn">Validar</button>
         </span>
@@ -202,7 +231,7 @@
         </h3>
         <button id="folder-close" type="button" class="btn">Cerrar</button>
       </header>
-      <p id="folder-current" class="cell-mono" style="overflow-wrap:anywhere"></p>
+      <p id="folder-current" class="cell-mono folder-current"></p>
       <div class="btn-row">
         <button id="folder-up" type="button" class="btn">&#8593; Arriba</button>
         <button id="folder-select" type="button" class="btn btn-primary">Seleccionar esta carpeta</button>

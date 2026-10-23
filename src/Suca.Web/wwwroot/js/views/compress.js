@@ -5,12 +5,16 @@ import {
 } from "../main.js";
 import { t } from "../i18n.js";
 import { openOverlay, closeOverlay, enableListNavigation } from "../a11y.js";
+import { pesoObjetivoChip, integrityChips } from "../ui/chips.js";
+import { confirmDialog, promptDialog } from "../ui/dialog.js";
+import { readOptions, applyOptions, overridesFromOptions, appendOptionsToForm } from "../ui/options.js";
 
 const queue = [];           // { key, file, previewUrl, state, percent, phase, record, error, cancelFn }
 let converting = false;
 let globalPaused = false;
 let initialized = false;
 let optionsPinned = false;  // el usuario edito opciones o aplico un preset
+let lastOptimized = null;   // { record, options } de la ultima conversion optimizada
 
 export function initCompressView() {
   if (initialized) return;
@@ -86,6 +90,10 @@ export function initCompressView() {
   el("preset-apply-selected").addEventListener("click", () => applyPresetToSelected());
   el("preset-save").addEventListener("click", () => void savePresetFromOptions());
   el("preset-delete").addEventListener("click", () => void deletePreset());
+
+  // Panel de valores optimos: reutilizar lo que eligio el optimizador.
+  el("optimal-apply").addEventListener("click", applyOptimalToPending);
+  el("optimal-save-profile").addEventListener("click", saveOptimalAsProfile);
 
   el("browse-folder-button").addEventListener("click", () => void openFolderBrowser());
   el("order-validate").addEventListener("click", () => void validateOrder());
@@ -176,20 +184,24 @@ function applyDefaults() {
   const conversion = state.settings.values.conversion || {};
   const web = state.settings.values.web || {};
 
-  if (conversion.engine && el("engine").querySelector(`option[value='${conversion.engine}']`)) {
-    el("engine").value = conversion.engine;
-  }
-  if (conversion.format && el("format").querySelector(`option[value='${conversion.format}']`)) {
-    el("format").value = conversion.format;
-    el("format").dispatchEvent(new Event("change"));
-  }
-  if (typeof conversion.quality === "number") {
-    el("quality").value = conversion.quality;
-    el("quality-out").textContent = conversion.quality;
-  }
-  if (typeof conversion.removeMetadata === "boolean") {
-    el("remove-metadata").checked = conversion.removeMetadata;
-  }
+  // Un unico punto aplica valores a los controles (js/ui/options.js): evita
+  // repetir el mapeo campo por campo en cada vista.
+  applyOptions({
+    engine: conversion.engine,
+    format: conversion.format,
+    quality: typeof conversion.quality === "number" ? conversion.quality : null,
+    maxWidth: conversion.maxWidth ?? null,
+    maxHeight: conversion.maxHeight ?? null,
+    removeMetadata: conversion.removeMetadata ?? true,
+    collection: null,
+    profile: null,
+    pesoObjetivo: null,
+    allowLossy: true,
+    optimize: false
+  });
+
+  el("quality-out").textContent = el("quality").value;
+
   if (typeof web.convertParallelism === "number") {
     el("parallel-info").textContent = web.convertParallelism;
   }
@@ -287,6 +299,11 @@ async function convertQueue() {
         });
         item.state = "done";
         item.percent = 100;
+
+        // Guarda el resultado optimizado para el panel "valores optimos".
+        if (item.record?.optimized) {
+          lastOptimized = { record: item.record, options: readOptions() };
+        }
       } catch (error) {
         if (error.cancelled || error.errorCode === "cancelled") {
           // La pausa intencional deja el estado en "paused" (toggleGlobalPause
@@ -406,6 +423,8 @@ function renderQueue() {
   if (!list) return;
   list.innerHTML = "";
 
+  renderOptimalPanel();
+
   const editableCount = queue.filter(editableState).length;
   el("select-all-button").hidden = editableCount === 0;
   el("apply-to-selected-button").hidden = editableCount === 0;
@@ -474,7 +493,7 @@ function renderQueue() {
           <span class="chip">${r.outputCompressionRatio}:1</span>
           <span class="chip">${r.durationMs} ms</span>
           <span class="chip">${escapeHtml(r.collection)}</span>
-          ${persoObjetivoChip(r)}
+          ${pesoObjetivoChip(r)}
           ${integrityChips(r)}
         </div>
         <div class="q-meta q-links">
@@ -737,6 +756,10 @@ function describeOverrides(ov) {
   if (ov.maxWidth) parts.push(`ancho=${ov.maxWidth}`);
   if (ov.maxHeight) parts.push(`alto=${ov.maxHeight}`);
   if (ov.collection) parts.push(`coleccion=${ov.collection}`);
+  if (ov.profile) parts.push(`perfil=${ov.profile.a}${ov.profile.b}${ov.profile.c}${ov.profile.d}`);
+  if (ov.pesoObjetivo) parts.push(`techo=${ov.pesoObjetivo}KB`);
+  if (ov.allowLossy === false) parts.push("sin perdida");
+  if (ov.optimize) parts.push("optimizar");
   return parts.join(", ");
 }
 
@@ -751,59 +774,11 @@ function removeItem(item) {
 }
 
 function buildForm(item, correlation) {
-  const ov = item.overrides || {};
   const form = new FormData();
   form.append("file", item.file, item.file.name);
-  form.append("engine", ov.engine ?? el("engine").value);
-  form.append("format", ov.format ?? el("format").value);
-  form.append("quality", ov.quality ?? el("quality").value);
-  form.append("removeMetadata", el("remove-metadata").checked ? "true" : "false");
   form.append("correlationId", correlation);
-
-  // Perfil SUCA A-D: solo se envia si los cuatro digitos estan completos.
-  const profile = readProfileInputs();
-  if (profile) {
-    form.append("profileA", profile.a);
-    form.append("profileB", profile.b);
-    form.append("profileC", profile.c);
-    form.append("profileD", profile.d);
-  }
-
-  // Peso objetivo (peso mosca) y modo sin perdida.
-  const target = el("peso-objetivo")?.value?.trim();
-  if (target) form.append("pesoMoscaKbTarget", target);
-
-  if (el("engine").value === "suca") {
-    form.append("allowLossy", el("allow-lossy").checked ? "true" : "false");
-
-    // Optimizacion: solo tiene sentido con un techo de peso.
-    if (el("optimize-target")?.checked && target) {
-      form.append("optimize", "true");
-    }
-  }
-
-  const collection = ov.collection ?? el("collection").value.trim();
-  if (collection) form.append("collection", collection);
-
-  const maxWidth = ov.maxWidth ?? el("max-width").value;
-  const maxHeight = ov.maxHeight ?? el("max-height").value;
-  if (maxWidth) form.append("maxWidth", maxWidth);
-  if (maxHeight) form.append("maxHeight", maxHeight);
-
+  appendOptionsToForm(form, readOptions(), item.overrides || {});
   return form;
-}
-
-/* Lee los cuatro digitos del perfil; null si estan incompletos o fuera de 0-9. */
-function readProfileInputs() {
-  const ids = ["profile-a", "profile-b", "profile-c", "profile-d"];
-  const values = ids.map((id) => el(id)?.value ?? "");
-
-  if (values.some((value) => value.trim() === "")) return null;
-
-  const digits = values.map((value) => Number(value));
-  if (digits.some((value) => !Number.isInteger(value) || value < 0 || value > 9)) return null;
-
-  return { a: digits[0], b: digits[1], c: digits[2], d: digits[3] };
 }
 
 function toggleSelectAll() {
@@ -821,16 +796,8 @@ function applyOptionsToSelected() {
     return;
   }
 
-  for (const item of selected) {
-    item.overrides = {
-      engine: el("engine").value,
-      format: el("format").value,
-      quality: Number(el("quality").value) || undefined,
-      maxWidth: el("max-width").value ? Number(el("max-width").value) : undefined,
-      maxHeight: el("max-height").value ? Number(el("max-height").value) : undefined,
-      collection: el("collection").value.trim() || undefined
-    };
-  }
+  const overrides = overridesFromOptions(readOptions());
+  for (const item of selected) item.overrides = overrides;
 
   renderQueue();
   toast(`Opciones aplicadas a ${selected.length} imagen(es).`, "info");
@@ -967,39 +934,61 @@ async function validateOrder() {
   }
 }
 
-/* Chip del techo de peso: verde si se cumplio, rojo si el kernel no pudo alcanzarlo. */
-function persoObjetivoChip(record) {
-  if (!record || record.pesoObjetivoKb === null || record.pesoObjetivoKb === undefined) return "";
+/* ============================== Valores optimos ============================== */
 
-  const target = Number(record.pesoObjetivoKb).toFixed(0);
-  const ok = record.pesoObjetivoCumplido === true;
-  const opt = record.optimized
-    ? ` · optimizado ${record.candidatesEvaluated} cand. (escala ${Number(record.optimizedScale).toFixed(2)}, q${record.optimizedQuality})`
-    : "";
+/* Panel con lo que eligio el optimizador: permite reutilizarlo sin re-teclearlo. */
+function renderOptimalPanel() {
+  const panel = el("optimal-panel");
+  if (!panel) return;
 
-  return `<span class="chip" data-kind="${ok ? "ok" : "bad"}" title="${ok ? "Peso dentro del techo pedido" : "No se pudo alcanzar el techo con los ajustes disponibles"} (${record.pesoIteraciones ?? 0} iteraciones)${opt}">objetivo ${target} KB ${ok ? "cumplido" : "no cumplido"}${record.optimized ? " · optimizado" : ""}</span>`;
-}
-
-/* Chips del reporte de integridad perceptual (solo motor SUCA). */
-function integrityChips(record) {
-  if (!record || record.integritySsim === null || record.integritySsim === undefined) return "";
-
-  if (record.integrityBitwiseEqual) {
-    return '<span class="chip" data-kind="ok" title="SHA-256 identico: sin cambios en los pixeles">sin perdida (bit a bit)</span>';
+  if (!lastOptimized) {
+    panel.hidden = true;
+    return;
   }
 
-  const kind = record.integrityVerdict === "ACEPTABLE ESTRUCTURALMENTE" ? "ok" : "warn";
-  const psnr = record.integrityPsnr !== null && record.integrityPsnr !== undefined
-    ? `${Number(record.integrityPsnr).toFixed(1)} dB`
-    : "-";
-
-  const legibility = record.legibilityAcceptable === true
-    ? '<span class="chip" data-kind="ok" title="Legibilidad verificada: SSIM y bordes por encima del umbral">legible</span>'
+  const { record } = lastOptimized;
+  const legible = record.legibilityAcceptable === true
+    ? '<span class="chip" data-kind="ok">legible</span>'
     : record.legibilityAcceptable === false
-      ? '<span class="chip" data-kind="bad" title="La legibilidad puede verse afectada (SSIM o bordes por debajo del umbral)">legibilidad en riesgo</span>'
+      ? '<span class="chip" data-kind="bad">legibilidad en riesgo</span>'
       : "";
 
-  return `<span class="chip" data-kind="${kind}" title="${escapeHtml(record.integrityVerdict ?? "")} · bordes ${record.integrityEdgeRetention} · histograma ${record.integrityHistogram}">SSIM ${Number(record.integritySsim).toFixed(3)} · PSNR ${psnr}</span>${legibility}`;
+  el("optimal-chips").innerHTML = `
+    <span class="chip" data-kind="accent">${record.convertedWidth}x${record.convertedHeight}</span>
+    <span class="chip">q${record.optimizedQuality ?? record.quality ?? "-"}</span>
+    <span class="chip">escala ${Number(record.optimizedScale ?? 0).toFixed(2)}</span>
+    <span class="chip">${record.candidatesEvaluated} candidato(s)</span>
+    <span class="chip">score ${Number(record.qualityScore ?? 0).toFixed(3)}</span>
+    <span class="chip">${Number(record.convertedBytes / 1024).toFixed(1)} KB</span>
+    <span class="chip">techo ${Number(record.pesoObjetivoKb ?? 0).toFixed(0)} KB</span>
+    ${legible}`;
+
+  panel.hidden = false;
+}
+
+function applyOptimalToPending() {
+  if (!lastOptimized) return;
+
+  const overrides = overridesFromOptions(lastOptimized.options);
+  const pending = queue.filter(editableState);
+
+  if (pending.length === 0) {
+    toast("No hay imagenes pendientes en la cola.", "warn");
+    return;
+  }
+
+  for (const item of pending) item.overrides = overrides;
+  renderQueue();
+  toast(`Valores optimos aplicados a ${pending.length} imagen(es).`, "info");
+}
+
+function saveOptimalAsProfile() {
+  if (!lastOptimized) return;
+
+  // Deja los controles en el estado que produjo el optimo y abre el dialogo de perfil.
+  applyOptions(lastOptimized.options);
+  pinOptions();
+  void savePresetFromOptions();
 }
 
 /* ============================== Carpetas y portapapeles ============================== */
@@ -1152,6 +1141,9 @@ function renderPresetList(selected = null) {
     const option = document.createElement("option");
     option.value = preset.name;
     const parts = [preset.format || "webp", preset.quality ? `q${preset.quality}` : null];
+    if (preset.pesoObjetivo) parts.push(`${preset.pesoObjetivo}KB`);
+    if (preset.optimize) parts.push("opt");
+    if (preset.allowLossy === false) parts.push("sin perdida");
     option.textContent = `${preset.name} (${parts.filter(Boolean).join(" ")})`;
     select.appendChild(option);
   });
@@ -1181,21 +1173,19 @@ function describePreset(preset) {
 
 function applyPresetToOptions(preset) {
   pinOptions();
-  if (preset.engine) el("engine").value = preset.engine;
-  if (preset.format) {
-    el("format").value = preset.format;
-    el("format").dispatchEvent(new Event("change"));
-  }
-  if (preset.quality) {
-    el("quality").value = String(preset.quality);
-    el("quality").dispatchEvent(new Event("input"));
-  }
-  if (preset.maxWidth) el("max-width").value = String(preset.maxWidth);
-  if (preset.maxHeight) el("max-height").value = String(preset.maxHeight);
-  if (preset.collection !== undefined) el("collection").value = preset.collection || "";
-  if (preset.removeMetadata !== undefined && preset.removeMetadata !== null) {
-    el("remove-metadata").checked = Boolean(preset.removeMetadata);
-  }
+  applyOptions({
+    engine: preset.engine,
+    format: preset.format,
+    quality: preset.quality,
+    maxWidth: preset.maxWidth ?? null,
+    maxHeight: preset.maxHeight ?? null,
+    removeMetadata: preset.removeMetadata !== false,
+    collection: preset.collection ?? null,
+    profile: preset.profile ?? null,
+    pesoObjetivo: preset.pesoObjetivo ?? null,
+    allowLossy: preset.allowLossy !== false,
+    optimize: Boolean(preset.optimize)
+  });
 }
 
 function applyPresetToAll() {
@@ -1239,26 +1229,25 @@ function applyPresetToSelected() {
 }
 
 function presetToOverrides(preset) {
-  return {
-    engine: preset.engine ?? undefined,
-    format: preset.format ?? undefined,
-    quality: preset.quality ?? undefined,
-    maxWidth: preset.maxWidth ?? undefined,
-    maxHeight: preset.maxHeight ?? undefined,
-    collection: preset.collection ?? undefined
-  };
+  return overridesFromOptions(preset);
 }
 
+/** Convierte las opciones actuales en un preset con nombre (formato de ajustes). */
 function readOptionsAsPreset(name) {
+  const options = readOptions();
   return {
     name,
-    engine: el("engine").value,
-    format: el("format").value,
-    quality: Number(el("quality").value) || 80,
-    maxWidth: el("max-width").value ? Number(el("max-width").value) : null,
-    maxHeight: el("max-height").value ? Number(el("max-height").value) : null,
-    removeMetadata: el("remove-metadata").checked,
-    collection: el("collection").value.trim() || null
+    engine: options.engine,
+    format: options.format,
+    quality: options.quality,
+    maxWidth: options.maxWidth,
+    maxHeight: options.maxHeight,
+    removeMetadata: options.removeMetadata,
+    collection: options.collection,
+    profile: options.profile,
+    pesoObjetivo: options.pesoObjetivo,
+    allowLossy: options.allowLossy,
+    optimize: options.optimize
   };
 }
 
@@ -1287,16 +1276,16 @@ async function loadServerSettingsAndRefresh() {
 }
 
 async function savePresetFromOptions() {
-  const nameInput = el("preset-name");
-  let name = (nameInput.value || "").trim();
+  const name = await promptDialog({
+    title: "Guardar perfil de conversion",
+    label: "Nombre del perfil",
+    message: "Se guarda con los valores actuales (motor, formato, calidad, perfil A-D, peso y optimizacion). Si el nombre ya existe, se actualiza.",
+    value: currentPresets().length === 0 ? "Mi perfil" : "",
+    placeholder: "ej. Web 80 KB legible",
+    confirmLabel: "Guardar perfil"
+  });
 
-  if (!name) {
-    // Primer guardado: pedimos el nombre en el propio campo.
-    nameInput.hidden = false;
-    nameInput.focus();
-    el("preset-status").textContent = "Escribe un nombre y vuelve a pulsar Guardar actual.";
-    return;
-  }
+  if (!name) return;
 
   const presets = [...currentPresets()];
   const existingIndex = presets.findIndex((preset) => (preset.name || "").toLowerCase() === name.toLowerCase());
@@ -1308,9 +1297,6 @@ async function savePresetFromOptions() {
     presets.push(readOptionsAsPreset(name));
     await persistPresets(presets, `Preset "${name}" guardado.`);
   }
-
-  nameInput.hidden = true;
-  nameInput.value = "";
 }
 
 async function deletePreset() {
@@ -1318,7 +1304,14 @@ async function deletePreset() {
   const preset = name ? presetByName(name) : null;
   if (!preset) return;
 
-  if (!window.confirm(`Borrar el preset "${name}"?`)) return;
+  const confirmed = await confirmDialog({
+    title: "Borrar perfil",
+    message: `Se eliminara el perfil "${name}". Las conversiones ya hechas no cambian.`,
+    confirmLabel: "Borrar perfil",
+    danger: true
+  });
+
+  if (!confirmed) return;
 
   const presets = currentPresets().filter((item) => (item.name || "").toLowerCase() !== name.toLowerCase());
   await persistPresets(presets, `Preset "${name}" borrado.`);

@@ -3,6 +3,8 @@ import {
   fetchJson, copyTextToClipboard, settingsReady
 } from "../main.js";
 import { openOverlay, closeOverlay, enableListNavigation } from "../a11y.js";
+import { pesoObjetivoChip, integrityChips, integrityDetailChips } from "../ui/chips.js";
+import { confirmDialog, promptDialog } from "../ui/dialog.js";
 
 let initialized = false;
 let activeCollection = "";
@@ -209,11 +211,7 @@ function renderGrid(items) {
           <span class="chip" data-kind="accent">${escapeHtml(String(record.format).toUpperCase())}</span>
           <span class="chip" data-kind="ok">-${Math.abs(record.savingPercent).toFixed(1)}%</span>
           <span class="chip">${escapeHtml(record.collection)}</span>
-          ${record.integritySsim === null || record.integritySsim === undefined
-            ? ""
-            : record.integrityBitwiseEqual
-              ? '<span class="chip" data-kind="ok" title="Sin perdida: SHA-256 identico">sin perdida</span>'
-              : `<span class="chip" data-kind="${record.integrityVerdict === "ACEPTABLE ESTRUCTURALMENTE" ? "ok" : "warn"}" title="${escapeHtml(record.integrityVerdict ?? "")}">SSIM ${Number(record.integritySsim).toFixed(2)}</span>`}
+          ${integrityChips(record)}
         </div>
         <div class="g-meta">${formatBytes(record.originalBytes)} &rarr; ${formatBytes(record.convertedBytes)} \u00b7 ${escapeHtml(new Date(record.createdAtUtc).toLocaleString())}</div>
         <div class="btn-row">
@@ -368,7 +366,15 @@ async function moveSelection() {
 async function deleteSelection() {
   const ids = Array.from(selectedIds);
   if (ids.length === 0) return;
-  if (!window.confirm(`Eliminar ${ids.length} imagen(es) de la galeria? Esta accion no se puede deshacer.`)) return;
+
+  const confirmed = await confirmDialog({
+    title: "Eliminar imagenes",
+    message: `Se eliminaran ${ids.length} imagen(es) de la galeria y sus archivos. Esta accion no se puede deshacer.`,
+    confirmLabel: "Eliminar",
+    danger: true
+  });
+
+  if (!confirmed) return;
 
   let removed = 0;
   for (const id of ids) {
@@ -435,7 +441,14 @@ function moveLightbox(step) {
 }
 
 async function deleteImage(id) {
-  if (!window.confirm("Eliminar esta imagen de la galeria?")) return;
+  const confirmed = await confirmDialog({
+    title: "Eliminar imagen",
+    message: "Se eliminara la imagen de la galeria y su archivo. Esta accion no se puede deshacer.",
+    confirmLabel: "Eliminar",
+    danger: true
+  });
+
+  if (!confirmed) return;
   const response = await fetch(`/api/web/images/${id}`, { method: "DELETE" });
   if (response.ok || response.status === 404) {
     toast("Imagen eliminada.", "info");
@@ -560,7 +573,13 @@ async function renameCollection(currentName, newName) {
     toast("Escriba el nuevo nombre en el campo junto al boton.", "warn");
     return;
   }
-  if (!window.confirm(`Renombrar '${currentName}' a '${newName}'? Se actualizan todas sus imagenes.`)) return;
+  const confirmed = await confirmDialog({
+    title: "Renombrar coleccion",
+    message: `Se renombrara "${currentName}" a "${newName}". Todas sus imagenes se actualizan.`,
+    confirmLabel: "Renombrar"
+  });
+
+  if (!confirmed) return;
 
   try {
     const response = await fetch(`/api/web/collections/${encodeURIComponent(currentName)}`, {
@@ -580,7 +599,14 @@ async function renameCollection(currentName, newName) {
 }
 
 async function dissolveCollection(name) {
-  if (!window.confirm(`Disolver '${name}'? Las imagenes pasan a 'general' y los archivos NO se borran.`)) return;
+  const confirmed = await confirmDialog({
+    title: "Disolver coleccion",
+    message: `Las imagenes de "${name}" pasaran a "general". Los archivos NO se borran.`,
+    confirmLabel: "Disolver",
+    danger: true
+  });
+
+  if (!confirmed) return;
 
   try {
     const response = await fetch(`/api/web/collections/${encodeURIComponent(name)}?confirm=true`, { method: "DELETE" });
@@ -635,30 +661,9 @@ async function openDetail(id) {
     ${record.correlationId ? `<span class="chip cell-mono">corr: ${escapeHtml(record.correlationId)}</span>` : ""}
     <span class="chip">${escapeHtml(new Date(record.createdAtUtc).toLocaleString())}</span>`;
 
-  // Integridad perceptual: la prueba medible de "cuanta calidad se conservo".
+  // Integridad perceptual y techo de peso desde el modulo compartido (js/ui/chips.js).
   const integrity = el("detail-integrity-chips");
-  if (integrity) {
-    const peso = record.pesoObjetivoKb !== null && record.pesoObjetivoKb !== undefined
-      ? `<span class="chip" data-kind="${record.pesoObjetivoCumplido ? "ok" : "bad"}">objetivo ${Number(record.pesoObjetivoKb).toFixed(0)} KB ${record.pesoObjetivoCumplido ? "cumplido" : "no cumplido"} (${record.pesoIteraciones ?? 0} iter.)</span>
-         ${record.optimized ? `<span class="chip" data-kind="accent">optimizado: ${record.candidatesEvaluated} candidatos · escala ${Number(record.optimizedScale).toFixed(2)} · q${record.optimizedQuality} · score ${Number(record.qualityScore ?? 0).toFixed(3)}</span>` : ""}`
-      : "";
-
-    if (record.integritySsim === null || record.integritySsim === undefined) {
-      integrity.innerHTML = `${peso}<span class="chip">sin reporte (motor directo)</span>`;
-    } else if (record.integrityBitwiseEqual) {
-      integrity.innerHTML = `${peso}<span class="chip" data-kind="ok">sin perdida: SHA-256 identico</span>`;
-    } else {
-      const ok = record.integrityVerdict === "ACEPTABLE ESTRUCTURALMENTE";
-      integrity.innerHTML = `
-        ${peso}
-        <span class="chip" data-kind="${ok ? "ok" : "warn"}">${escapeHtml(record.integrityVerdict ?? "")}</span>
-        <span class="chip">SSIM ${Number(record.integritySsim).toFixed(3)}</span>
-        <span class="chip">PSNR ${Number(record.integrityPsnr ?? 0).toFixed(1)} dB</span>
-        <span class="chip">bordes ${Number(record.integrityEdgeRetention ?? 0).toFixed(2)}</span>
-        <span class="chip">histograma ${Number(record.integrityHistogram ?? 0).toFixed(2)}</span>
-        <span class="chip">${escapeHtml(record.integrityMode ?? "")}</span>`;
-    }
-  }
+  if (integrity) integrity.innerHTML = integrityDetailChips(record);
 
   el("detail-download").href = `/api/web/images/${id}/file?variant=converted`;
   el("detail-download-original").href = `/api/web/images/${id}/file?variant=original`;

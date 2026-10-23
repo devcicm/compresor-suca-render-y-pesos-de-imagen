@@ -93,6 +93,19 @@ Todavia no hay release publicada: este es el estado actual del codigo de `main`.
 
 ### Cambiado
 
+**UI del Compresor: configuracion sin antipatrones**
+- Opciones agrupadas en `fieldset`/`legend` (Peso y calidad · Salida) y perfiles movidos a
+  `<details>`: menos ruido, divulgacion progresiva.
+- Nuevo panel **"Valores optimos"**: muestra lo que eligio el optimizador (dimensiones,
+  calidad, escala, candidatos, score, peso, legibilidad) y permite **aplicarlo a pendientes**
+  o **guardarlo como perfil**.
+- Nuevos modulos compartidos para evitar duplicacion (DRY): `js/ui/options.js` (mapeo unico
+  de los controles), `js/ui/chips.js` (integridad/techo/legibilidad) y `js/ui/dialog.js`
+  (confirmaciones y prompts propios).
+- Se eliminaron los **9 `window.confirm`/`window.prompt`** del shell y los **4 estilos inline**
+  restantes; las confirmaciones destructivas usan un dialogo con foco atrapado, `Escape` y
+  etiqueta explicita.
+
 - **SixLabors.ImageSharp fijado a 2.1.13** (Apache-2.0, gratuita y compatible con la
   licencia MIT): la linea 3.x exige licencia comercial de Six Labors en compilacion y sus
   versiones flotantes (`3.*`) rompian la CI y la reproducibilidad. Se elimino

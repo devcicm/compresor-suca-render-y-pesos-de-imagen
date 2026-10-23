@@ -1,4 +1,5 @@
 ﻿import { state, el, toast, escapeHtml, fetchJson } from "../main.js";
+import { confirmDialog } from "../ui/dialog.js";
 
 let initialized = false;
 const dirtyPaths = new Set();
@@ -164,7 +165,11 @@ async function importSettings(event) {
       throw new Error("El archivo no contiene un objeto de ajustes.");
     }
 
-    if (!window.confirm(`Importar estos ajustes en el scope usuario?\n\n${file.name}`)) return;
+    if (!await confirmDialog({
+      title: "Importar ajustes",
+      message: `Se cargaran los valores de "${file.name}" en el scope usuario, sobrescribiendo los que coincidan.`,
+      confirmLabel: "Importar"
+    })) return;
 
     await fetchJson("/api/settings/user", {
       method: "PUT",
@@ -304,7 +309,12 @@ async function saveSettings(scope) {
 }
 
 async function resetSettings(scope) {
-  if (!window.confirm(`Restablecer el scope ${scope} a los valores por defecto?`)) return;
+  if (!await confirmDialog({
+    title: "Restablecer ajustes",
+    message: `Se eliminaran los valores del scope ${scope} y volveran los de la siguiente precedencia.`,
+    confirmLabel: "Restablecer",
+    danger: true
+  })) return;
 
   try {
     const response = await fetch(`/api/settings/${scope}/reset`, { method: "POST" });

@@ -1,5 +1,6 @@
 import { el, escapeHtml, toast, fetchJson, copyTextToClipboard } from "../main.js";
 import { renderMarkdown } from "../vendor/markdown.js";
+import { confirmDialog, promptDialog } from "../ui/dialog.js";
 
 const chatState = {
   conversationId: null,
@@ -549,8 +550,13 @@ async function renameCurrentConversation() {
 
   const current = chatState.conversations.find((item) => item.conversationId === chatState.conversationId);
   const suggestion = current?.title || "Nueva conversacion";
-  const title = window.prompt("Nuevo titulo de la conversacion:", suggestion);
-  if (!title || !title.trim()) return;
+  const title = await promptDialog({
+    title: "Renombrar conversacion",
+    label: "Titulo",
+    value: suggestion,
+    confirmLabel: "Renombrar"
+  });
+  if (!title) return;
 
   try {
     const result = await fetchJson(`/api/minichat/conversations/${encodeURIComponent(chatState.conversationId)}`, {
@@ -569,7 +575,12 @@ async function renameCurrentConversation() {
 
 async function deleteCurrentConversation() {
   if (!chatState.conversationId) return;
-  if (!window.confirm("Eliminar esta conversacion y sus mensajes?")) return;
+  if (!await confirmDialog({
+    title: "Eliminar conversacion",
+    message: "Se eliminara la conversacion y todos sus mensajes. Esta accion no se puede deshacer.",
+    confirmLabel: "Eliminar",
+    danger: true
+  })) return;
 
   try {
     const response = await fetch(`/api/minichat/conversations/${encodeURIComponent(chatState.conversationId)}`, {

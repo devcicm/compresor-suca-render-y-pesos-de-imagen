@@ -69,7 +69,7 @@ async function loadOrders() {
         <span>${order.completed}/${order.totalItems} ok</span>
         ${order.failed ? `<span class="chip" data-kind="bad">${order.failed} fallos</span>` : ""}
         ${order.cancelled ? `<span class="chip" data-kind="warn">${order.cancelled} cancel.</span>` : ""}
-        <span class="progress" style="min-width:120px"><span class="progress-fill" style="width:${order.progressPercent}%"></span></span>
+        <span class="progress order-progress"><span class="progress-fill" style="width:${order.progressPercent}%"></span></span>
         <span>${order.progressPercent}%</span>`;
 
       row.querySelector("[data-detail-order]")?.addEventListener("click", () => void openOrderDetail(order.orderId));
